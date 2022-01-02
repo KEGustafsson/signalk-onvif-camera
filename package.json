@@ -1,6 +1,6 @@
 {
   "name": "signalk-onvif-camera",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "description": "Signal K Onvif Camera Interface",
   "main": "index.js",
   "keywords": [
@@ -8,9 +8,11 @@
     "signalk-webapp",
     "signalk-category-hidden"
   ],
+  "repository": "https://github.com/KEGustafsson/signalk-onvif-camera",
   "author": "Karl-Erik Gustafsson",
   "license": "MIT",
   "dependencies": {
+    "xml2js": ">=0.4.17",
     "devcert": "^1.2.0",
     "websocket": "^1.0.34"
   }
