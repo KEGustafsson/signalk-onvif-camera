@@ -51,6 +51,7 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 
 - v0.0.1, 1st version for testing
 - v0.0.2, license added
+- v0.1.0, 1st release
 
 ## Credits
 https://github.com/futomi/node-onvif 
