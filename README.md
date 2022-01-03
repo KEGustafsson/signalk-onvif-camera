@@ -1,16 +1,21 @@
 # signalk-onvif-camera
 
-Onvif Camera interface for Signal K. For IP cameras that support Onvif control, fixed and PTZ.
+ONVIF Camera interface for Signal K. For IP cameras that support ONVIF control, fixed and PTZ.
 
-## Onvif Camera plugin config in Signal K server.
+## ONVIF Camera plugin config in Signal K server.
 
 ![config](doc/config.jpg)
 - Select port for server
 - Select https/wss if you would like to use secure server
-- Enter Onvif profile username
-- Enter Onvif profile password
+- Enter ONVIF profile username
+- Enter ONVIF profile password
 - Add camera IP to list (user/pass are used to login to camera)
 
+## ONVIF in IP Camera.
+
+Example of HikVision IP camera ONVIF
+
+![onvif](doc/onvif.jpg)
 
 ## Onvif Camera Webapp.
 
