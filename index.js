@@ -40,6 +40,7 @@ module.exports = function createPlugin(app) {
   plugin.description = "Signal K Onvif Camera Interface";
   const setStatus = app.setPluginStatus || app.setProviderStatus;
 
+  let ipAddress;
   let port;
   let secure;
   let wsServer;
@@ -52,6 +53,7 @@ module.exports = function createPlugin(app) {
   plugin.start = function (options, restartPlugin) {
     userName = options.userName;
     password = options.password;
+    ipAddress = options.ipAddress;
     port = options.port;
     secure = options.secure;
     const browserData = [{"secure": secure,"port": port}];
@@ -128,6 +130,10 @@ module.exports = function createPlugin(app) {
     title: 'Onvif Camera Interface',
     description: 'Make an ONVIF user profile to camera(s) and add camera(s) IP below',
     properties: {
+      ipAddress: {
+        type: 'string',
+        title: 'IP address of LAN, where ONVIF devices are located. Default, leave empty.',
+      },
       port: {
         type: 'number',
         title: 'Server port number',
@@ -257,7 +263,7 @@ module.exports = function createPlugin(app) {
     devices = {};
     let names = {};
     onvif
-      .startProbe()
+      .startProbe(ipAddress)
       .then((device_list) => {
         device_list.forEach((device) => {
           let odevice = new onvif.OnvifDevice({
