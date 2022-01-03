@@ -16,6 +16,7 @@ ONVIF Camera interface for Signal K. For IP cameras that support ONVIF control, 
 Example of HikVision IP camera ONVIF
 
 ![onvif](doc/onvif.jpg)
+- Add ONVIF user to IP camera if applicable
 
 ## Onvif Camera Webapp.
 
