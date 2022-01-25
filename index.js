@@ -72,6 +72,14 @@ module.exports = function createPlugin(app) {
       .catch(console.error);
     }
 
+    try {
+      if (fs.existsSync(path.join(__dirname, 'cert/tls.key'))) {
+        certStatus = true;
+      }
+    } catch {
+      certStatus = false;
+    }
+
     startServer = setInterval(() => {
       if (secure) {
         if (certStatus) {
