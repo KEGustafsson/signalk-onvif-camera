@@ -48,7 +48,7 @@ module.exports = function createPlugin(app) {
   let userName;
   let password;
   let certStatus = false;
-  let startServer
+  let startServer;
 
   plugin.start = function (options, restartPlugin) {
     userName = options.userName;
@@ -57,24 +57,28 @@ module.exports = function createPlugin(app) {
     port = options.port;
     secure = options.secure;
     const browserData = [{"secure": secure,"port": port}];
-    fs.writeFileSync(path.join(__dirname, 'browserdata.json'), JSON.stringify(browserData));
+    fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
+    
+    if ((secure) && (!fs.existsSync('./cert'))){
+      fs.mkdirSync('./cert');
+      devcert.certificateFor([
+        'localhost'
+      ])
+      .then(({key, cert}) => {
+        fs.writeFileSync(path.join(__dirname, 'cert/tls.key'), key);
+        fs.writeFileSync(path.join(__dirname, 'cert/tls.cert'), cert);
+        certStatus = true;
+      })
+      .catch(console.error);
+    }
 
-    const certFile = './tls.cert'
-    fs.access(certFile, fs.F_OK, (err) => {
-      if (err) {
-        devcert.certificateFor([
-          'localhost'
-        ])
-          .then(({key, cert}) => {
-            fs.writeFileSync(path.join(__dirname, 'tls.key'), key);
-            fs.writeFileSync(path.join(__dirname, 'tls.cert'), cert);
-            certStatus = true;
-          })
-          .catch(console.error);
-      } else {
+    try {
+      if (fs.existsSync(path.join(__dirname, 'cert/tls.key'))) {
         certStatus = true;
       }
-    });
+    } catch {
+      certStatus = false;
+    }
 
     startServer = setInterval(() => {
       if (secure) {
@@ -82,8 +86,8 @@ module.exports = function createPlugin(app) {
           certStatus = false;
           clearInterval(startServer);
           const httpsSec = {
-            key: fs.readFileSync(path.join(__dirname, 'tls.key')),
-            cert: fs.readFileSync(path.join(__dirname, 'tls.cert')),
+            key: fs.readFileSync(path.join(__dirname, 'cert/tls.key')),
+            cert: fs.readFileSync(path.join(__dirname, 'cert/tls.cert')),
           };
           webServer = https.createServer(httpsSec, httpServerRequest);
           webServer.listen(port, () => {
