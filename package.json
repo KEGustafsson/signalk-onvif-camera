@@ -1,12 +1,16 @@
 {
   "name": "signalk-onvif-camera",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Signal K Onvif Camera Interface",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "prepublish": "npm run build",
     "build": "webpack --config webpack.config.js --mode=production"
+  },
+  "signalk": {
+    "appIcon": "./icons/icon-72x72.png",
+    "displayName": "Signalk-onvif-camera"
   },
   "keywords": [
     "signalk-node-server-plugin",
