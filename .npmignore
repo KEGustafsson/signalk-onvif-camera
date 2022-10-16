@@ -1,0 +1,6 @@
+src
+public_src
+webpack.config.js
+node_modules
+.github
+doc
