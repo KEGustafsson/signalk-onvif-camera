@@ -11,12 +11,12 @@ module.exports = {
   },
   plugins: [
     new HtmlWebpackPlugin({
-      template: './public_src/index.html',
+      template: './src/index.html',
     }),
     new CopyPlugin({
       patterns: [
         {
-          from: path.resolve(__dirname, "public_src/style.css"),
+          from: path.resolve(__dirname, "src/style.css"),
           to: path.resolve(__dirname, "public/style.css"),
         },
       ],
