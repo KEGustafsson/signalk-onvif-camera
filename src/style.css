@@ -1,8 +1,11 @@
-tml,body {
+html,body {
 	font-family: "游ゴシック", YuGothic, "ヒラギノ角ゴ Pro", "Hiragino Kaku Gothic Pro", "メイリオ", "Meiryo", sans-serif;
 	width: 100%;
 	height: 100%;
+	color: white;
+	text-align: center;
 	overflow: hidden;
+	background-color: rgba(11,12,14,0.5);
 }
 h1 {
 	margin: 0;
@@ -15,6 +18,15 @@ h1 {
 #main-wrapper {
 	margin-top: 1em;
 }
+
+@media (min-width: 768px) {
+	.form-horizontal .control-label {
+	  text-align: center;
+	  color: rgba(145,145,146,1);
+	  font-size: 20px;
+	}
+  }
+
 /*
 #device {
 	width: 20em;
@@ -28,7 +40,8 @@ h1 {
 */
 #connected-device {
 	position: relative;
-	background-color: #000000;
+	/*background-color: #000000;*/
+	background-color: rgba(11,12,14,0.5);
 	overflow: hidden;
 	display: none;
 }
@@ -39,7 +52,8 @@ h1 {
 	position: absolute;
 	bottom: 10px;
 	left: 1em;
-	background-color: rgba(255, 255, 255, 0.5);
+	/*background-color: rgba(255, 255, 255, 0.5);*/
+	background-color: rgba(11,12,14,0.5);
 	border-radius: 0.3em;
 }
 #connected-device div.ptz-spd-ctl-box span.label {
@@ -50,7 +64,9 @@ h1 {
 	position: absolute;
 	top: 1em;
 	right: 1em;
-	background-color: rgba(255, 255, 255, 0.5);
+	/*background-color: rgba(255, 255, 255, 0.5);*/
+	background-color: rgba(11,12,14,0.5);
+
 	padding: 0.3em 0.5em;
 	border-radius: 0.3em;
 }
@@ -71,6 +87,7 @@ h1 {
 	height: 160px;
 	border-radius: 80px;
 	background-color: #ffffff;
+	/*background-color: rgba(11,12,14,0.9);*/
 	color: #000000;
 	position: absolute;
 	opacity: 0.4;
