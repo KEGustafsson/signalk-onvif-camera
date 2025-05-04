@@ -56,6 +56,7 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 - v0.1.1, ONVIF LAN selection
 - v0.1.2, Webpack bundled
 - v0.1.3, Webapp icon added
+- v0.1.5, updated to npm packages
 
 ## Credits
 https://github.com/futomi/node-onvif 
