@@ -1,0 +1,53 @@
+# .github/workflows/build.yml
+name: Build and Store Artifacts
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run build
+      run: npm run build
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: signalk-onvif-camera-build-${{ github.sha }}
+        path: |
+          dist/
+          build/
+          *.js
+          *.js.map
+          !node_modules/
+        retention-days: 1
+        if-no-files-found: warn
+        
+    - name: Upload package artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: signalk-onvif-camera-package-${{ github.sha }}
+        path: |
+          package.json
+          README.md
+          icons/
+        retention-days: 1
+        if-no-files-found: warn
