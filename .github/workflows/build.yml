@@ -19,7 +19,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '24'
+        node-version: '18'
         
     - name: Install dependencies
       run: npm install
@@ -27,26 +27,58 @@ jobs:
     - name: Run build
       run: npm run build
       
-    - name: Upload build artifacts
+    - name: Upload dist directory
       uses: actions/upload-artifact@v4
       with:
-        name: signalk-onvif-camera-build-${{ github.sha }}
-        path: |
-          dist/
-          build/
-          *.js
-          *.js.map
-          !node_modules/
+        name: dist-${{ github.sha }}
+        path: dist/
         retention-days: 1
         if-no-files-found: warn
         
-    - name: Upload package artifacts
+    - name: Upload build directory
       uses: actions/upload-artifact@v4
       with:
-        name: signalk-onvif-camera-package-${{ github.sha }}
-        path: |
-          package.json
-          README.md
-          icons/
+        name: build-${{ github.sha }}
+        path: build/
+        retention-days: 1
+        if-no-files-found: warn
+        
+    - name: Upload JavaScript files
+      uses: actions/upload-artifact@v4
+      with:
+        name: js-files-${{ github.sha }}
+        path: "*.js"
+        retention-days: 1
+        if-no-files-found: warn
+        
+    - name: Upload JavaScript map files
+      uses: actions/upload-artifact@v4
+      with:
+        name: js-map-files-${{ github.sha }}
+        path: "*.js.map"
+        retention-days: 1
+        if-no-files-found: warn
+        
+    - name: Upload package.json
+      uses: actions/upload-artifact@v4
+      with:
+        name: package-json-${{ github.sha }}
+        path: package.json
+        retention-days: 1
+        if-no-files-found: warn
+        
+    - name: Upload README
+      uses: actions/upload-artifact@v4
+      with:
+        name: readme-${{ github.sha }}
+        path: README.md
+        retention-days: 1
+        if-no-files-found: warn
+        
+    - name: Upload icons directory
+      uses: actions/upload-artifact@v4
+      with:
+        name: icons-${{ github.sha }}
+        path: icons/
         retention-days: 1
         if-no-files-found: warn
