@@ -57,6 +57,7 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 - v0.1.2, Webpack bundled
 - v0.1.3, Webapp icon added
 - v0.1.4, updated to npm packages
+- v0.2.0, hide controls
 
 ## Credits
 https://github.com/futomi/node-onvif 
