@@ -32,37 +32,6 @@
     <!-- -->
     <link href="style.css" rel="stylesheet" />
     <script src="main.js"></script>
-    <style>
-      .hide-controls-btn {
-        position: absolute;
-        top: 10px;
-        left: 10px;
-        z-index: 1000;
-        opacity: 0.7;
-      }
-      
-      .hide-controls-btn:hover {
-        opacity: 1;
-      }
-      
-      .hide-controls-btn:focus,
-      .hide-controls-btn:active,
-      .hide-controls-btn.active {
-        opacity: 0.7;
-      }
-      
-      #connected-device {
-        position: relative;
-      }
-      
-      .controls-hidden .device-info-box,
-      .controls-hidden .ptz-ctl-box,
-      .controls-hidden .ptz-spd-ctl-box,
-      .controls-hidden .ptz-zom-ctl-box,
-      .controls-hidden .disconnect-box {
-        display: none;
-      }
-    </style>
   </head>
   <body>
     <div class="container theme-showcase" role="main" id="main-wrapper">
@@ -88,6 +57,9 @@
       <div id="connected-device">
         <button type="button" class="btn btn-default btn-sm hide-controls-btn" title="Hide/Show Controls">
           <span class="glyphicon glyphicon-eye-open"></span>
+        </button>
+        <button type="button" class="btn btn-default btn-sm hide-controls-btn-2 ptz-goto-home">
+          <span class="glyphicon glyphicon-home"></span>
         </button>
         
         <p><img class="snapshot" src="" /></p>
