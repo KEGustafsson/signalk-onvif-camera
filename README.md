@@ -38,6 +38,7 @@ Example of HikVision IP camera ONVIF
 - Zoom in/out
 - Control speed
 - Disconnect
+- Hide/show controls 
 
 ## Installation
 
