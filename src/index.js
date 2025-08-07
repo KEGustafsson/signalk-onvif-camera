@@ -54,6 +54,7 @@
       mdl_msg: $("#message-modal"),
       ptz_spd: $('input[name="ptz-speed"]'),
       btn_hme: $("#connected-device div.ptz-pad-box button.ptz-goto-home"),
+      btn_hm2: $("#connected-device button.ptz-goto-home"),
       ptz_pad: $("#connected-device div.ptz-pad-box"),
       zom_in: $("#connected-device div.ptz-zom-ctl-box button.ptz-zom-in"),
       zom_out: $("#connected-device div.ptz-zom-ctl-box button.ptz-zom-ot"),
@@ -75,6 +76,9 @@
     this.el["btn_hme"].on("click", this.ptzGotoHome.bind(this));
     this.el["btn_hme"].on("touchstart", this.ptzGotoHome.bind(this));
     this.el["btn_hme"].on("touchend", this.ptzGotoHome.bind(this));
+    this.el["btn_hm2"].on("click", this.ptzGotoHome.bind(this));
+    this.el["btn_hm2"].on("touchstart", this.ptzGotoHome.bind(this));
+    this.el["btn_hm2"].on("touchend", this.ptzGotoHome.bind(this));
     this.el["ptz_pad"].on("mousedown", this.ptzMove.bind(this));
     this.el["ptz_pad"].on("mouseup", this.ptzStop.bind(this));
     this.el["ptz_pad"].on("touchstart", this.ptzMove.bind(this));

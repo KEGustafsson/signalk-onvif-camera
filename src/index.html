@@ -33,6 +33,7 @@
     <link href="style.css" rel="stylesheet" />
     <script src="main.js"></script>
   </head>
+  <body>
     <div class="container theme-showcase" role="main" id="main-wrapper">
       <form class="form-horizontal" id="connect-form">
         <div class="form-group">
@@ -54,6 +55,13 @@
       </form>
 
       <div id="connected-device">
+        <button type="button" class="btn btn-default btn-sm hide-controls-btn" title="Hide/Show Controls">
+          <span class="glyphicon glyphicon-eye-open"></span>
+        </button>
+        <button type="button" class="btn btn-default btn-sm hide-controls-btn-2 ptz-goto-home">
+          <span class="glyphicon glyphicon-home"></span>
+        </button>
+        
         <p><img class="snapshot" src="" /></p>
         <div class="device-info-box">
           <span class="name"></span> (<span class="address"></span>)
@@ -134,5 +142,27 @@
         </div>
       </div>
     </div>
+
+    <script>
+      // Hide/Show controls functionality
+      $(document).ready(function() {
+        $('.hide-controls-btn').click(function() {
+          const $connectedDevice = $('#connected-device');
+          const $icon = $(this).find('.glyphicon');
+          
+          if ($connectedDevice.hasClass('controls-hidden')) {
+            // Show controls
+            $connectedDevice.removeClass('controls-hidden');
+            $icon.removeClass('glyphicon-eye-close').addClass('glyphicon-eye-open');
+            $(this).attr('title', 'Hide Controls');
+          } else {
+            // Hide controls
+            $connectedDevice.addClass('controls-hidden');
+            $icon.removeClass('glyphicon-eye-open').addClass('glyphicon-eye-close');
+            $(this).attr('title', 'Show Controls');
+          }
+        });
+      });
+    </script>
   </body>
 </html>
