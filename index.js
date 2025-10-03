@@ -285,11 +285,11 @@ module.exports = function createPlugin(app) {
           };
         }
         let res = { id: "startDiscovery", result: devs };
-        conn.send(JSON.stringify(res));
+        if (conn.connected) conn.send(JSON.stringify(res));
       })
       .catch((error) => {
         let res = { id: "connect", error: error.message };
-        conn.send(JSON.stringify(res));
+        if (conn.connected) conn.send(JSON.stringify(res));
       });
   }
 
@@ -300,7 +300,7 @@ module.exports = function createPlugin(app) {
         id: "connect",
         error: "The specified device is not found: " + params.address,
       };
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -317,7 +317,7 @@ module.exports = function createPlugin(app) {
       } else {
         res["result"] = result;
       }
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
     });
   }
 
@@ -328,7 +328,7 @@ module.exports = function createPlugin(app) {
         id: "fetchSnapshot",
         error: "The specified device is not found: " + params.address,
       };
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
     device.fetchSnapshot((error, result) => {
@@ -342,7 +342,7 @@ module.exports = function createPlugin(app) {
         var uri = "data:" + ct + ";base64," + b64;
         res["result"] = uri;
       }
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
     });
   }
 
@@ -353,7 +353,7 @@ module.exports = function createPlugin(app) {
         id: "ptzMove",
         error: "The specified device is not found: " + params.address,
       };
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
     device.ptzMove(params, (error) => {
@@ -363,7 +363,7 @@ module.exports = function createPlugin(app) {
       } else {
         res["result"] = true;
       }
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
     });
   }
 
@@ -374,7 +374,7 @@ module.exports = function createPlugin(app) {
         id: "ptzStop",
         error: "The specified device is not found: " + params.address,
       };
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
     device.ptzStop((error) => {
@@ -384,7 +384,7 @@ module.exports = function createPlugin(app) {
       } else {
         res["result"] = true;
       }
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
     });
   }
 
@@ -395,7 +395,7 @@ module.exports = function createPlugin(app) {
         id: "ptzMove",
         error: "The specified device is not found: " + params.address,
       };
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
     if (!device.services.ptz) {
@@ -403,7 +403,7 @@ module.exports = function createPlugin(app) {
         id: "ptzHome",
         error: "The specified device does not support PTZ.",
       };
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -420,7 +420,7 @@ module.exports = function createPlugin(app) {
       } else {
         res["result"] = true;
       }
-      conn.send(JSON.stringify(res));
+      if (conn.connected) conn.send(JSON.stringify(res));
     });
   }
 
