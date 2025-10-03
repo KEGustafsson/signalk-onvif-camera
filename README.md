@@ -60,6 +60,8 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 - v0.1.4, updated to npm packages
 - v0.2.0, hide controls
 - v0.2.1, version update
+- v0.3.0, ws error handling
+- v0.3.1, icon loading error
 
 ## Credits
 https://github.com/futomi/node-onvif 
