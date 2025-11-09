@@ -1,5 +1,7 @@
 node_modules
-package-lock.json
 public/*
 !public/icons/*
 !public/favicon.ico
+coverage
+.eslintcache
+cert

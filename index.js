@@ -32,6 +32,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const devcert = require('devcert');
+const { validateDeviceAddress, validatePTZCommand, ValidationError } = require('./lib/utils/validation');
 
 module.exports = function createPlugin(app) {
   const plugin = {};
@@ -68,15 +69,20 @@ module.exports = function createPlugin(app) {
         fs.writeFileSync(path.join(__dirname, 'cert/tls.key'), key);
         fs.writeFileSync(path.join(__dirname, 'cert/tls.cert'), cert);
         certStatus = true;
+        console.log('SSL certificate generated successfully');
       })
-      .catch(console.error);
+      .catch((error) => {
+        console.error('Failed to generate SSL certificate:', error.message);
+        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+      });
     }
 
     try {
       if (fs.existsSync(path.join(__dirname, 'cert/tls.key'))) {
         certStatus = true;
       }
-    } catch {
+    } catch (error) {
+      console.error('Error checking for certificate:', error.message);
       certStatus = false;
     }
 
@@ -230,35 +236,40 @@ module.exports = function createPlugin(app) {
     console.log("HTTP : 404 Not Found : " + url);
   }
 
-  var client_list = [];
-
   function wsServerRequest(request) {
     var conn = request.accept(null, request.origin);
     conn.on("message", function (message) {
       if (message.type !== "utf8") {
         return;
       }
-      var data = JSON.parse(message.utf8Data);
-      var method = data["method"];
-      var params = data["params"];
-      if (method === "startDiscovery") {
-        startDiscovery(conn);
-      } else if (method === "connect") {
-        connect(conn, params);
-      } else if (method === "fetchSnapshot") {
-        fetchSnapshot(conn, params);
-      } else if (method === "ptzMove") {
-        ptzMove(conn, params);
-      } else if (method === "ptzStop") {
-        ptzStop(conn, params);
-      } else if (method === "ptzHome") {
-        ptzHome(conn, params);
+      try {
+        var data = JSON.parse(message.utf8Data);
+        var method = data["method"];
+        var params = data["params"];
+        if (method === "startDiscovery") {
+          startDiscovery(conn);
+        } else if (method === "connect") {
+          connect(conn, params);
+        } else if (method === "fetchSnapshot") {
+          fetchSnapshot(conn, params);
+        } else if (method === "ptzMove") {
+          ptzMove(conn, params);
+        } else if (method === "ptzStop") {
+          ptzStop(conn, params);
+        } else if (method === "ptzHome") {
+          ptzHome(conn, params);
+        }
+      } catch (error) {
+        console.error("Invalid JSON received from WebSocket:", error.message);
+        if (conn.connected) {
+          conn.send(JSON.stringify({ error: "Invalid JSON format" }));
+        }
       }
     });
 
     conn.on("close", function (message) {});
     conn.on("error", function (error) {
-      console.log(error);
+      console.error("WebSocket error:", error);
     });
   }
 
@@ -294,9 +305,21 @@ module.exports = function createPlugin(app) {
   }
 
   function connect(conn, params) {
-    var device = devices[params.address];
+    try {
+      // Validate device address
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = {
+        id: "connect",
+        error: error.message
+      };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
     if (!device) {
-      var res = {
+      const res = {
         id: "connect",
         error: "The specified device is not found: " + params.address,
       };
@@ -311,7 +334,7 @@ module.exports = function createPlugin(app) {
     }
 
     device.init((error, result) => {
-      var res = { id: "connect" };
+      const res = { id: "connect" };
       if (error) {
         res["error"] = error.toString();
       } else {
@@ -322,9 +345,20 @@ module.exports = function createPlugin(app) {
   }
 
   function fetchSnapshot(conn, params) {
-    var device = devices[params.address];
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = {
+        id: "fetchSnapshot",
+        error: error.message
+      };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
     if (!device) {
-      var res = {
+      const res = {
         id: "fetchSnapshot",
         error: "The specified device is not found: " + params.address,
       };
@@ -332,14 +366,14 @@ module.exports = function createPlugin(app) {
       return;
     }
     device.fetchSnapshot((error, result) => {
-      var res = { id: "fetchSnapshot" };
+      const res = { id: "fetchSnapshot" };
       if (error) {
         res["error"] = error.toString();
       } else {
-        var ct = result["headers"]["content-type"];
-        var buffer = result["body"];
-        var b64 = buffer.toString("base64");
-        var uri = "data:" + ct + ";base64," + b64;
+        const ct = result["headers"]["content-type"];
+        const buffer = result["body"];
+        const b64 = buffer.toString("base64");
+        const uri = "data:" + ct + ";base64," + b64;
         res["result"] = uri;
       }
       if (conn.connected) conn.send(JSON.stringify(res));
@@ -347,9 +381,20 @@ module.exports = function createPlugin(app) {
   }
 
   function ptzMove(conn, params) {
-    var device = devices[params.address];
+    try {
+      validatePTZCommand(params);
+    } catch (error) {
+      const res = {
+        id: "ptzMove",
+        error: error.message
+      };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
     if (!device) {
-      var res = {
+      const res = {
         id: "ptzMove",
         error: "The specified device is not found: " + params.address,
       };
@@ -357,7 +402,7 @@ module.exports = function createPlugin(app) {
       return;
     }
     device.ptzMove(params, (error) => {
-      var res = { id: "ptzMove" };
+      const res = { id: "ptzMove" };
       if (error) {
         res["error"] = error.toString();
       } else {
@@ -368,9 +413,20 @@ module.exports = function createPlugin(app) {
   }
 
   function ptzStop(conn, params) {
-    var device = devices[params.address];
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = {
+        id: "ptzStop",
+        error: error.message
+      };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
     if (!device) {
-      var res = {
+      const res = {
         id: "ptzStop",
         error: "The specified device is not found: " + params.address,
       };
@@ -378,7 +434,7 @@ module.exports = function createPlugin(app) {
       return;
     }
     device.ptzStop((error) => {
-      var res = { id: "ptzStop" };
+      const res = { id: "ptzStop" };
       if (error) {
         res["error"] = error.toString();
       } else {
@@ -389,17 +445,28 @@ module.exports = function createPlugin(app) {
   }
 
   function ptzHome(conn, params) {
-    var device = devices[params.address];
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = {
+        id: "ptzHome",
+        error: error.message
+      };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
     if (!device) {
-      var res = {
-        id: "ptzMove",
+      const res = {
+        id: "ptzHome",
         error: "The specified device is not found: " + params.address,
       };
       if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
     if (!device.services.ptz) {
-      var res = {
+      const res = {
         id: "ptzHome",
         error: "The specified device does not support PTZ.",
       };
@@ -407,14 +474,14 @@ module.exports = function createPlugin(app) {
       return;
     }
 
-    var ptz = device.services.ptz;
-    var profile = device.getCurrentProfile();
-    var params = {
+    const ptz = device.services.ptz;
+    const profile = device.getCurrentProfile();
+    const ptzParams = {
       ProfileToken: profile["token"],
       Speed: 1,
     };
-    ptz.gotoHomePosition(params, (error, result) => {
-      var res = { id: "ptzMove" };
+    ptz.gotoHomePosition(ptzParams, (error, result) => {
+      const res = { id: "ptzHome" };
       if (error) {
         res["error"] = error.toString();
       } else {
@@ -424,5 +491,55 @@ module.exports = function createPlugin(app) {
     });
   }
 
+  // Store plugin instance for graceful shutdown
+  if (!global.__onvifPluginInstances) {
+    global.__onvifPluginInstances = [];
+  }
+  global.__onvifPluginInstances.push(plugin);
+
   return plugin;
 };
+
+// Graceful shutdown handling
+let shutdownInProgress = false;
+
+function gracefulShutdown(signal) {
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
+
+  console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  // Stop all plugin instances
+  if (global.__onvifPluginInstances) {
+    global.__onvifPluginInstances.forEach((plugin) => {
+      if (plugin && typeof plugin.stop === 'function') {
+        try {
+          plugin.stop();
+        } catch (error) {
+          console.error('Error stopping plugin:', error.message);
+        }
+      }
+    });
+  }
+
+  // Give servers time to close gracefully
+  setTimeout(() => {
+    console.log('Shutdown complete');
+    process.exit(0);
+  }, 1000);
+}
+
+// Register shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  gracefulShutdown('UNCAUGHT_EXCEPTION');
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled rejection at:', promise, 'reason:', reason);
+  gracefulShutdown('UNHANDLED_REJECTION');
+});
