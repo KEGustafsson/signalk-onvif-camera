@@ -2,12 +2,18 @@
   "env": {
     "node": true,
     "es6": true,
-    "browser": true
+    "browser": true,
+    "jest": true,
+    "jquery": true
   },
   "extends": "eslint:recommended",
   "parserOptions": {
     "ecmaVersion": 2018,
     "sourceType": "module"
+  },
+  "globals": {
+    "img_w": "writable",
+    "img_h": "writable"
   },
   "rules": {
     "indent": ["error", 2, { "SwitchCase": 1 }],
