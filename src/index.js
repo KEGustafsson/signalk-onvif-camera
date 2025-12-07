@@ -1,13 +1,19 @@
 (function () {
   let scheme;
+  let httpScheme;
   let port;
+  let snapshotInterval = 100;
+
   readTextFile('browserdata.json', function (text){
     const browserData = JSON.parse(text);
     port = browserData[0].port;
+    snapshotInterval = browserData[0].snapshotInterval || 100;
     if (browserData[0].secure) {
       scheme = 'wss';
+      httpScheme = 'https';
     } else {
       scheme = 'ws';
+      httpScheme = 'http';
     }
   });
 
@@ -52,18 +58,28 @@
       img_snp: $('#connected-device img.snapshot'),
       btn_dcn: $('#connected-device button[name="disconnect"]'),
       mdl_msg: $('#message-modal'),
+      mdl_str: $('#streams-modal'),
       ptz_spd: $('input[name="ptz-speed"]'),
       btn_hme: $('#connected-device div.ptz-pad-box button.ptz-goto-home'),
       btn_hm2: $('#connected-device button.ptz-goto-home'),
       ptz_pad: $('#connected-device div.ptz-pad-box'),
       zom_in: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-in'),
-      zom_out: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-ot')
+      zom_out: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-ot'),
+      sel_profile: $('#connected-device .profile-select'),
+      btn_streams: $('#connected-device .show-streams-btn'),
+      stream_mode: $('input[name="stream-mode"]')
     };
     this.selected_address = '';
     this.device_connected = false;
     this.ptz_moving = false;
     this.snapshot_w = 400;
     this.snapshot_h = 300;
+    this.stream_mode = 'snapshot'; // 'snapshot' or 'mjpeg'
+    this.profiles = [];
+    this.currentProfile = null;
+    this.streams = null;
+    this.mjpegUrl = null;
+    this.snapshotUrl = null;
   }
 
   OnvifManager.prototype.init = function () {
@@ -91,6 +107,23 @@
     this.el['zom_out'].on('mouseup', this.ptzStop.bind(this));
     this.el['zom_out'].on('touchstart', this.ptzMove.bind(this));
     this.el['zom_out'].on('touchend', this.ptzStop.bind(this));
+
+    // Profile selection handler
+    this.el['sel_profile'].on('change', this.onProfileChange.bind(this));
+
+    // Stream mode change handler
+    this.el['stream_mode'].on('change', this.onStreamModeChange.bind(this));
+
+    // Show streams button handler
+    this.el['btn_streams'].on('click', this.showStreamsModal.bind(this));
+
+    // Copy URL button handlers
+    $('.copy-url-btn').on('click', function() {
+      const target = $(this).data('target');
+      const input = $(target);
+      input.select();
+      document.execCommand('copy');
+    });
   };
 
   OnvifManager.prototype.adjustSize = function () {
@@ -157,6 +190,12 @@
         this.ptzStopCallback(data);
       } else if (id === 'ptzHome') {
         this.ptzHomeCallback(data);
+      } else if (id === 'getProfiles') {
+        this.getProfilesCallback(data);
+      } else if (id === 'changeProfile') {
+        this.changeProfileCallback(data);
+      } else if (id === 'getStreams') {
+        this.getStreamsCallback(data);
       }
     }.bind(this);
   };
@@ -179,12 +218,26 @@
   };
 
   OnvifManager.prototype.disconnectDevice = function () {
+    // Stop MJPEG stream if active
+    this.stopMjpegStream();
+
     this.el['img_snp'].removeAttr('src');
     this.el['div_pnl'].hide();
     this.el['frm_con'].show();
     this.device_connected = false;
     this.disabledLoginForm(false);
     this.el['btn_con'].text('Connect');
+
+    // Reset stream state
+    this.stream_mode = 'snapshot';
+    this.profiles = [];
+    this.streams = null;
+    this.mjpegUrl = null;
+    this.snapshotUrl = null;
+
+    // Reset UI to snapshot mode
+    $('input[name="stream-mode"][value="snapshot"]').prop('checked', true).parent().addClass('active');
+    $('input[name="stream-mode"][value="mjpeg"]').parent().removeClass('active');
   };
 
   OnvifManager.prototype.connectDevice = function () {
@@ -231,6 +284,22 @@
     this.el['btn_con'].prop('disabled', false);
     if (data.result) {
       this.selected_address = this.el['sel_dev'].val();
+
+      // Store profiles and stream info
+      if (data.result.profiles) {
+        this.profiles = data.result.profiles;
+        this.populateProfileSelect(data.result.profiles, data.result.currentProfile);
+      }
+      if (data.result.streams) {
+        this.streams = data.result.streams;
+      }
+      if (data.result.mjpegUrl) {
+        this.mjpegUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.mjpegUrl;
+      }
+      if (data.result.snapshotUrl) {
+        this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
+      }
+
       this.showConnectedDeviceInfo(this.selected_address, data.result);
       this.el['btn_con'].text('Disconnect');
       this.el['frm_con'].hide();
@@ -249,6 +318,97 @@
       );
       this.device_connected = false;
     }
+  };
+
+  OnvifManager.prototype.populateProfileSelect = function (profiles, currentToken) {
+    this.el['sel_profile'].empty();
+    profiles.forEach(function(p) {
+      const resolution = p.resolution ? p.resolution.width + 'x' + p.resolution.height : '';
+      const encoding = p.encoding || '';
+      const label = p.name + (resolution ? ' (' + resolution + ' ' + encoding + ')' : '');
+      const option = $('<option></option>').val(p.token).text(label);
+      if (p.token === currentToken) {
+        option.prop('selected', true);
+      }
+      this.el['sel_profile'].append(option);
+    }.bind(this));
+  };
+
+  OnvifManager.prototype.onProfileChange = function () {
+    const token = this.el['sel_profile'].val();
+    if (token && this.selected_address) {
+      this.sendRequest('changeProfile', {
+        address: this.selected_address,
+        token: token
+      });
+    }
+  };
+
+  OnvifManager.prototype.changeProfileCallback = function (data) {
+    if (data.result) {
+      // Update streams with new profile data
+      if (data.result.stream) {
+        this.streams = data.result.stream;
+      }
+      // If in MJPEG mode, restart the stream
+      if (this.stream_mode === 'mjpeg') {
+        this.startMjpegStream();
+      }
+    } else if (data.error) {
+      this.showMessageModal('Error', 'Failed to change profile: ' + data.error);
+    }
+  };
+
+  OnvifManager.prototype.getProfilesCallback = function (data) {
+    if (data.result && data.result.profiles) {
+      this.profiles = data.result.profiles;
+      this.populateProfileSelect(data.result.profiles, data.result.current);
+    }
+  };
+
+  OnvifManager.prototype.getStreamsCallback = function (data) {
+    if (data.result) {
+      this.streams = data.result;
+    }
+  };
+
+  OnvifManager.prototype.onStreamModeChange = function (event) {
+    this.stream_mode = $(event.target).val();
+
+    if (this.stream_mode === 'mjpeg') {
+      this.startMjpegStream();
+    } else {
+      this.stopMjpegStream();
+      if (this.device_connected) {
+        this.fetchSnapshot();
+      }
+    }
+  };
+
+  OnvifManager.prototype.startMjpegStream = function () {
+    if (this.mjpegUrl) {
+      // Add timestamp to prevent caching
+      this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
+    }
+  };
+
+  OnvifManager.prototype.stopMjpegStream = function () {
+    // Remove the src to stop the MJPEG stream
+    this.el['img_snp'].attr('src', '');
+  };
+
+  OnvifManager.prototype.showStreamsModal = function () {
+    const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
+
+    // Set stream URLs in the modal
+    if (this.streams) {
+      this.el['mdl_str'].find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');
+      this.el['mdl_str'].find('.stream-url-http').val(this.streams.http || 'Not available');
+    }
+    this.el['mdl_str'].find('.stream-url-mjpeg').val(this.mjpegUrl || 'Not available');
+    this.el['mdl_str'].find('.stream-url-snapshot').val(this.snapshotUrl || 'Not available');
+
+    this.el['mdl_str'].modal('show');
   };
 
   OnvifManager.prototype.showMessageModal = function (title, message) {
@@ -273,20 +433,28 @@
 
   OnvifManager.prototype.fetchSnapshotCallback = function (data) {
     if (data.result) {
-      this.el['img_snp'].attr('src', data.result);
+      // Only update image if in snapshot mode (not MJPEG)
+      if (this.stream_mode === 'snapshot') {
+        this.el['img_snp'].attr('src', data.result);
+      }
       window.setTimeout(
         function () {
-          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth;
-          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight;
+          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth || 400;
+          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight || 300;
           this.adjustSize();
-          if (this.device_connected === true) {
+          // Only continue fetching if connected and in snapshot mode
+          if (this.device_connected === true && this.stream_mode === 'snapshot') {
             this.fetchSnapshot();
           }
         }.bind(this),
-        10
+        snapshotInterval
       );
     } else if (data.error) {
       console.log(data.error);
+      // Retry after error with a longer delay
+      if (this.device_connected === true && this.stream_mode === 'snapshot') {
+        window.setTimeout(this.fetchSnapshot.bind(this), 1000);
+      }
     }
   };
 
