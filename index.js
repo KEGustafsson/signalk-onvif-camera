@@ -72,8 +72,13 @@ module.exports = function createPlugin(app) {
     if (options.cameras && Array.isArray(options.cameras)) {
       options.cameras.forEach(cam => {
         if (cam.address) {
+          // Sanitize nickname for Signal K path (alphanumeric and underscore only)
+          const rawNickname = cam.nickname || cam.name || cam.address;
+          const sanitizedNickname = rawNickname.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
           cameraConfigs[cam.address] = {
             name: cam.name || cam.address,
+            nickname: sanitizedNickname,
             userName: cam.userName || userName,
             password: cam.password || password,
             defaultProfile: cam.defaultProfile || null
@@ -180,14 +185,18 @@ module.exports = function createPlugin(app) {
 
               // Publish discovery to Signal K if enabled
               if (enableSignalKIntegration && app.handleMessage) {
-                const safeName = addr.replace(/\./g, '_');
+                const nickname = getCameraNickname(addr);
                 app.handleMessage(plugin.id, {
                   updates: [{
                     source: { label: plugin.id },
                     timestamp: new Date().toISOString(),
                     values: [{
-                      path: `sensors.camera.${safeName}.discovered`,
-                      value: true
+                      path: `sensors.camera.${nickname}`,
+                      value: {
+                        address: addr,
+                        discovered: true,
+                        connected: false
+                      }
                     }]
                   }]
                 });
@@ -286,6 +295,10 @@ module.exports = function createPlugin(app) {
             name: {
               type: 'string',
               title: 'Camera display name'
+            },
+            nickname: {
+              type: 'string',
+              title: 'Signal K path nickname (e.g., "bow", "stern", "mast"). Used in path: sensors.camera.[nickname]'
             },
             userName: {
               type: 'string',
@@ -873,57 +886,66 @@ module.exports = function createPlugin(app) {
     if (conn.connected) conn.send(JSON.stringify(res));
   }
 
-  // Publish camera info to Signal K
+  // Get nickname for a camera address
+  function getCameraNickname(address) {
+    const camConfig = cameraConfigs[address];
+    if (camConfig && camConfig.nickname) {
+      return camConfig.nickname;
+    }
+    // Fallback: convert IP to safe path name
+    return address.replace(/\./g, '_');
+  }
+
+  // Publish camera info to Signal K with nested values
   function publishCameraToSignalK(address, deviceInfo, profile) {
     if (!app.handleMessage) return;
 
-    const safeName = address.replace(/\./g, '_');
-    const basePath = `sensors.camera.${safeName}`;
+    const nickname = getCameraNickname(address);
+    const basePath = `sensors.camera.${nickname}`;
+
+    // Build nested value object
+    const cameraData = {
+      manufacturer: deviceInfo.Manufacturer || 'Unknown',
+      model: deviceInfo.Model || 'Unknown',
+      address: address,
+      connected: true
+    };
+
+    // Add stream info if available
+    if (profile && profile.stream) {
+      cameraData.stream = {
+        rtsp: profile.stream.rtsp || null,
+        http: profile.stream.http || null,
+        udp: profile.stream.udp || null
+      };
+    }
+
+    // Add resolution info if available
+    if (profile && profile.video && profile.video.encoder) {
+      cameraData.resolution = {
+        width: profile.video.encoder.resolution.width,
+        height: profile.video.encoder.resolution.height
+      };
+      cameraData.encoding = profile.video.encoder.encoding || null;
+      cameraData.framerate = profile.video.encoder.framerate || null;
+      cameraData.bitrate = profile.video.encoder.bitrate || null;
+    }
+
+    // Add profile name if available
+    if (profile) {
+      cameraData.profile = profile.name || null;
+    }
 
     const delta = {
       updates: [{
         source: { label: plugin.id },
         timestamp: new Date().toISOString(),
-        values: [
-          {
-            path: `${basePath}.manufacturer`,
-            value: deviceInfo.Manufacturer || 'Unknown'
-          },
-          {
-            path: `${basePath}.model`,
-            value: deviceInfo.Model || 'Unknown'
-          },
-          {
-            path: `${basePath}.address`,
-            value: address
-          },
-          {
-            path: `${basePath}.connected`,
-            value: true
-          }
-        ]
+        values: [{
+          path: basePath,
+          value: cameraData
+        }]
       }]
     };
-
-    if (profile && profile.stream) {
-      delta.updates[0].values.push({
-        path: `${basePath}.rtspUrl`,
-        value: profile.stream.rtsp || ''
-      });
-    }
-
-    if (profile && profile.video && profile.video.encoder) {
-      delta.updates[0].values.push(
-        {
-          path: `${basePath}.resolution.width`,
-          value: profile.video.encoder.resolution.width
-        },
-        {
-          path: `${basePath}.resolution.height`,
-          value: profile.video.encoder.resolution.height
-        }
-      );
-    }
 
     app.handleMessage(plugin.id, delta);
   }
