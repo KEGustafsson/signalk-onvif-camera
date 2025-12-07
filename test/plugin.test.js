@@ -79,5 +79,20 @@ describe('signalk-onvif-camera plugin', () => {
       expect(plugin.uiSchema.cameras).toBeDefined();
       expect(plugin.uiSchema.cameras.items.password['ui:widget']).toBe('password');
     });
+
+    test('should have discoverOnStart property', () => {
+      const props = plugin.schema.properties;
+      expect(props.discoverOnStart).toBeDefined();
+      expect(props.discoverOnStart.type).toBe('boolean');
+      expect(props.discoverOnStart.default).toBe(true);
+    });
+
+    test('should have startupDiscoveryDelay property', () => {
+      const props = plugin.schema.properties;
+      expect(props.startupDiscoveryDelay).toBeDefined();
+      expect(props.startupDiscoveryDelay.type).toBe('number');
+      expect(props.startupDiscoveryDelay.default).toBe(5);
+      expect(props.startupDiscoveryDelay.minimum).toBe(1);
+    });
   });
 });

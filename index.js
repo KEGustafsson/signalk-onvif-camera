@@ -52,8 +52,11 @@ module.exports = function createPlugin(app) {
   let startServer;
   let autoDiscoveryInterval;
   let autoDiscoveryTimer = null;
+  let startupDiscoveryTimer = null;
   let snapshotInterval;
   let enableSignalKIntegration;
+  let discoverOnStart;
+  let startupDiscoveryDelay;
   let cameraConfigs = {};
   let mjpegStreams = new Map(); // Track active MJPEG streams
 
@@ -66,6 +69,8 @@ module.exports = function createPlugin(app) {
     autoDiscoveryInterval = options.autoDiscoveryInterval || 0;
     snapshotInterval = options.snapshotInterval || 100;
     enableSignalKIntegration = options.enableSignalKIntegration || false;
+    discoverOnStart = options.discoverOnStart !== false; // Default true
+    startupDiscoveryDelay = options.startupDiscoveryDelay || 5;
 
     // Build camera-specific config map
     cameraConfigs = {};
@@ -142,6 +147,11 @@ module.exports = function createPlugin(app) {
           if (autoDiscoveryInterval > 0) {
             setupAutoDiscovery();
           }
+
+          // Run startup discovery if enabled
+          if (discoverOnStart) {
+            runStartupDiscovery();
+          }
         }
       } else {
         clearInterval(startServer);
@@ -157,6 +167,11 @@ module.exports = function createPlugin(app) {
         // Start auto-discovery timer if configured
         if (autoDiscoveryInterval > 0) {
           setupAutoDiscovery();
+        }
+
+        // Run startup discovery if enabled
+        if (discoverOnStart) {
+          runStartupDiscovery();
         }
       }
     }, 1000);
@@ -210,11 +225,74 @@ module.exports = function createPlugin(app) {
     }, autoDiscoveryInterval * 1000);
   }
 
+  // Run discovery once at startup after a delay
+  function runStartupDiscovery() {
+    console.log(`Startup discovery scheduled in ${startupDiscoveryDelay} seconds...`);
+
+    startupDiscoveryTimer = setTimeout(() => {
+      console.log('Running startup discovery...');
+      onvif.startProbe(ipAddress)
+        .then((device_list) => {
+          console.log(`Startup discovery found ${device_list.length} device(s)`);
+          device_list.forEach((device) => {
+            const odevice = new onvif.OnvifDevice({
+              xaddr: device.xaddrs[0]
+            });
+            const addr = odevice.address;
+            if (!devices[addr]) {
+              devices[addr] = odevice;
+              console.log(`Startup discovered camera: ${addr}`);
+            }
+
+            // Auto-connect pre-configured cameras and publish to Signal K
+            const camConfig = cameraConfigs[addr];
+            if (camConfig && enableSignalKIntegration) {
+              // Set auth and initialize device
+              odevice.setAuth(camConfig.userName, camConfig.password);
+              odevice.init((error, result) => {
+                if (error) {
+                  console.error(`Failed to initialize camera ${addr}: ${error.message}`);
+                  return;
+                }
+                console.log(`Auto-connected to pre-configured camera: ${addr}`);
+                const currentProfile = odevice.getCurrentProfile();
+                publishCameraToSignalK(addr, result, currentProfile);
+              });
+            } else if (enableSignalKIntegration && app.handleMessage) {
+              // Just publish discovery info for non-configured cameras
+              const nickname = getCameraNickname(addr);
+              app.handleMessage(plugin.id, {
+                updates: [{
+                  source: { label: plugin.id },
+                  timestamp: new Date().toISOString(),
+                  values: [{
+                    path: `sensors.camera.${nickname}`,
+                    value: {
+                      address: addr,
+                      discovered: true,
+                      connected: false
+                    }
+                  }]
+                }]
+              });
+            }
+          });
+        })
+        .catch((error) => {
+          console.error('Startup discovery error:', error.message);
+        });
+    }, startupDiscoveryDelay * 1000);
+  }
+
   plugin.stop = function stop() {
     clearInterval(startServer);
     if (autoDiscoveryTimer) {
       clearInterval(autoDiscoveryTimer);
       autoDiscoveryTimer = null;
+    }
+    if (startupDiscoveryTimer) {
+      clearTimeout(startupDiscoveryTimer);
+      startupDiscoveryTimer = null;
     }
     // Clean up MJPEG streams
     mjpegStreams.forEach((stream, key) => {
@@ -280,6 +358,17 @@ module.exports = function createPlugin(app) {
         type: 'boolean',
         title: 'Publish camera data to Signal K paths',
         default: false
+      },
+      discoverOnStart: {
+        type: 'boolean',
+        title: 'Run camera discovery when plugin starts',
+        default: true
+      },
+      startupDiscoveryDelay: {
+        type: 'number',
+        title: 'Delay before startup discovery in seconds',
+        default: 5,
+        minimum: 1
       },
       cameras: {
         type: 'array',
