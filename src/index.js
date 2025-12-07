@@ -350,9 +350,15 @@
       if (data.result.stream) {
         this.streams = data.result.stream;
       }
-      // If in MJPEG mode, restart the stream
+      // Refresh the display based on current mode
       if (this.stream_mode === 'mjpeg') {
+        // Restart MJPEG stream with new profile
         this.startMjpegStream();
+      } else {
+        // In snapshot mode, trigger a new snapshot fetch to show new profile
+        if (this.device_connected) {
+          this.fetchSnapshot();
+        }
       }
     } else if (data.error) {
       this.showMessageModal('Error', 'Failed to change profile: ' + data.error);
