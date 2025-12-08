@@ -194,9 +194,12 @@ module.exports = function createPlugin(app) {
               xaddr: device.xaddrs[0]
             });
             const addr = odevice.address;
+            const deviceName = (device.name || addr).replace(/%20/g, ' ');
+
             if (!devices[addr]) {
               devices[addr] = odevice;
-              app.debug(`Auto-discovered new camera: ${addr}`);
+              deviceNames[addr] = deviceName;
+              app.debug(`Auto-discovered new camera: ${deviceName} (${addr})`);
 
               // Publish discovery to Signal K if enabled
               if (enableSignalKIntegration && app.handleMessage) {
@@ -239,9 +242,12 @@ module.exports = function createPlugin(app) {
               xaddr: device.xaddrs[0]
             });
             const addr = odevice.address;
+            const deviceName = (device.name || addr).replace(/%20/g, ' ');
+
             if (!devices[addr]) {
               devices[addr] = odevice;
-              app.debug(`Startup discovered camera: ${addr}`);
+              deviceNames[addr] = deviceName;
+              app.debug(`Startup discovered camera: ${deviceName} (${addr})`);
             }
 
             // Auto-connect pre-configured cameras and publish to Signal K

@@ -261,20 +261,23 @@
     const devices = data.result;
     const currentSelection = this.el['sel_dev'].val();
 
-    // Get list of existing device addresses in the dropdown
+    // Get list of existing device addresses in the dropdown (exclude placeholders)
     const existingAddresses = {};
+    const placeholders = ['Select a device', 'now searching...'];
     this.el['sel_dev'].find('option').each(function() {
       const val = $(this).val();
-      if (val && val !== 'Select a device') {
+      const text = $(this).text();
+      // Only count real device entries (has IP-like value)
+      if (val && !placeholders.includes(val) && !placeholders.includes(text)) {
         existingAddresses[val] = true;
       }
     });
 
-    // Check if this is the first population (only has placeholder)
+    // Check if this is the first population (only has placeholder or no real devices)
     const isFirstPopulation = Object.keys(existingAddresses).length === 0;
 
     if (isFirstPopulation) {
-      // First time - populate normally
+      // First time - clear and add proper placeholder
       this.el['sel_dev'].empty();
       this.el['sel_dev'].append($('<option>Select a device</option>'));
     }
@@ -292,8 +295,8 @@
       }
     }
 
-    // Restore selection if it was set
-    if (currentSelection && currentSelection !== 'Select a device') {
+    // Restore selection if it was a valid device (not placeholder)
+    if (currentSelection && !placeholders.includes(currentSelection)) {
       this.el['sel_dev'].val(currentSelection);
     }
 
