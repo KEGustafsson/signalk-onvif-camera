@@ -65,7 +65,6 @@
       ptz_pad: $('#connected-device div.ptz-pad-box'),
       zom_in: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-in'),
       zom_out: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-ot'),
-      sel_profile: $('#connected-device .profile-select'),
       btn_streams: $('#connected-device .show-streams-btn'),
       stream_mode: $('input[name="stream-mode"]')
     };
@@ -75,8 +74,6 @@
     this.snapshot_w = 400;
     this.snapshot_h = 300;
     this.stream_mode = 'snapshot'; // 'snapshot' or 'mjpeg'
-    this.profiles = [];
-    this.currentProfile = null;
     this.streams = null;
     this.mjpegUrl = null;
     this.snapshotUrl = null;
@@ -107,9 +104,6 @@
     this.el['zom_out'].on('mouseup', this.ptzStop.bind(this));
     this.el['zom_out'].on('touchstart', this.ptzMove.bind(this));
     this.el['zom_out'].on('touchend', this.ptzStop.bind(this));
-
-    // Profile selection handler
-    this.el['sel_profile'].on('change', this.onProfileChange.bind(this));
 
     // Stream mode change handler
     this.el['stream_mode'].on('change', this.onStreamModeChange.bind(this));
@@ -190,10 +184,6 @@
         this.ptzStopCallback(data);
       } else if (id === 'ptzHome') {
         this.ptzHomeCallback(data);
-      } else if (id === 'getProfiles') {
-        this.getProfilesCallback(data);
-      } else if (id === 'changeProfile') {
-        this.changeProfileCallback(data);
       } else if (id === 'getStreams') {
         this.getStreamsCallback(data);
       }
@@ -230,7 +220,6 @@
 
     // Reset stream state
     this.stream_mode = 'snapshot';
-    this.profiles = [];
     this.streams = null;
     this.mjpegUrl = null;
     this.snapshotUrl = null;
@@ -315,15 +304,7 @@
     if (data.result) {
       this.selected_address = this.el['sel_dev'].val();
 
-      // Store profiles and stream info
-      if (data.result.profiles) {
-        this.profiles = data.result.profiles;
-        this.populateProfileSelect(data.result.profiles, data.result.currentProfile);
-      }
-      // Store current profile token
-      if (data.result.currentProfile) {
-        this.currentProfile = data.result.currentProfile;
-      }
+      // Store stream info
       if (data.result.streams) {
         this.streams = data.result.streams;
       }
@@ -351,73 +332,6 @@
         'Failed to connect to the device.' + data.error.toString()
       );
       this.device_connected = false;
-    }
-  };
-
-  OnvifManager.prototype.populateProfileSelect = function (profiles, currentToken) {
-    this.el['sel_profile'].empty();
-    profiles.forEach(function(p) {
-      const resolution = p.resolution ? p.resolution.width + 'x' + p.resolution.height : '';
-      const encoding = p.encoding || '';
-      const label = p.name + (resolution ? ' (' + resolution + ' ' + encoding + ')' : '');
-      const option = $('<option></option>').val(p.token).text(label);
-      if (p.token === currentToken) {
-        option.prop('selected', true);
-      }
-      this.el['sel_profile'].append(option);
-    }.bind(this));
-  };
-
-  OnvifManager.prototype.onProfileChange = function () {
-    const token = this.el['sel_profile'].val();
-    if (token && this.selected_address) {
-      // Update current profile immediately to prevent race conditions
-      this.currentProfile = token;
-      // Update URLs with new profile
-      const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
-      this.mjpegUrl = baseUrl + '/mjpeg?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(token);
-      this.snapshotUrl = baseUrl + '/snapshot?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(token);
-
-      this.sendRequest('changeProfile', {
-        address: this.selected_address,
-        token: token
-      });
-    }
-  };
-
-  OnvifManager.prototype.changeProfileCallback = function (data) {
-    if (data.result) {
-      // Update current profile token
-      if (data.result.token) {
-        this.currentProfile = data.result.token;
-        // Update MJPEG and snapshot URLs with new profile
-        const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
-        this.mjpegUrl = baseUrl + '/mjpeg?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(data.result.token);
-        this.snapshotUrl = baseUrl + '/snapshot?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(data.result.token);
-      }
-      // Update streams with new profile data
-      if (data.result.stream) {
-        this.streams = data.result.stream;
-      }
-      // Refresh the display based on current mode
-      if (this.stream_mode === 'mjpeg') {
-        // Restart MJPEG stream with new profile
-        this.startMjpegStream();
-      } else {
-        // In snapshot mode, trigger a new snapshot fetch to show new profile
-        if (this.device_connected) {
-          this.fetchSnapshot();
-        }
-      }
-    } else if (data.error) {
-      this.showMessageModal('Error', 'Failed to change profile: ' + data.error);
-    }
-  };
-
-  OnvifManager.prototype.getProfilesCallback = function (data) {
-    if (data.result && data.result.profiles) {
-      this.profiles = data.result.profiles;
-      this.populateProfileSelect(data.result.profiles, data.result.current);
     }
   };
 
@@ -486,14 +400,9 @@
   };
 
   OnvifManager.prototype.fetchSnapshot = function () {
-    const params = {
+    this.sendRequest('fetchSnapshot', {
       address: this.selected_address
-    };
-    // Include current profile token if set
-    if (this.currentProfile) {
-      params.profile = this.currentProfile;
-    }
-    this.sendRequest('fetchSnapshot', params);
+    });
   };
 
   OnvifManager.prototype.fetchSnapshotCallback = function (data) {
