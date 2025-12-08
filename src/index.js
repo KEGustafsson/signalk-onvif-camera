@@ -259,17 +259,44 @@
 
   OnvifManager.prototype.startDiscoveryCallback = function (data) {
     const devices = data.result;
-    this.el['sel_dev'].empty();
-    this.el['sel_dev'].append($('<option>Select a device</option>'));
-    let n = 0;
+    const currentSelection = this.el['sel_dev'].val();
+
+    // Get list of existing device addresses in the dropdown
+    const existingAddresses = {};
+    this.el['sel_dev'].find('option').each(function() {
+      const val = $(this).val();
+      if (val && val !== 'Select a device') {
+        existingAddresses[val] = true;
+      }
+    });
+
+    // Check if this is the first population (only has placeholder)
+    const isFirstPopulation = Object.keys(existingAddresses).length === 0;
+
+    if (isFirstPopulation) {
+      // First time - populate normally
+      this.el['sel_dev'].empty();
+      this.el['sel_dev'].append($('<option>Select a device</option>'));
+    }
+
+    let n = Object.keys(existingAddresses).length;
     for (const key in devices) {
       const device = devices[key];
-      const option_el = $('<option></option>');
-      option_el.val(device.address);
-      option_el.text(device.name + ' (' + device.address + ')');
-      this.el['sel_dev'].append(option_el);
-      n++;
+      // Only add if not already in the list
+      if (!existingAddresses[device.address]) {
+        const option_el = $('<option></option>');
+        option_el.val(device.address);
+        option_el.text(device.name + ' (' + device.address + ')');
+        this.el['sel_dev'].append(option_el);
+        n++;
+      }
     }
+
+    // Restore selection if it was set
+    if (currentSelection && currentSelection !== 'Select a device') {
+      this.el['sel_dev'].val(currentSelection);
+    }
+
     if (n === 0) {
       this.showMessageModal(
         'Error',
