@@ -1,13 +1,19 @@
 (function () {
   let scheme;
+  let httpScheme;
   let port;
+  let snapshotInterval = 100;
+
   readTextFile('browserdata.json', function (text){
     const browserData = JSON.parse(text);
     port = browserData[0].port;
+    snapshotInterval = browserData[0].snapshotInterval || 100;
     if (browserData[0].secure) {
       scheme = 'wss';
+      httpScheme = 'https';
     } else {
       scheme = 'ws';
+      httpScheme = 'http';
     }
   });
 
@@ -52,18 +58,25 @@
       img_snp: $('#connected-device img.snapshot'),
       btn_dcn: $('#connected-device button[name="disconnect"]'),
       mdl_msg: $('#message-modal'),
+      mdl_str: $('#streams-modal'),
       ptz_spd: $('input[name="ptz-speed"]'),
       btn_hme: $('#connected-device div.ptz-pad-box button.ptz-goto-home'),
       btn_hm2: $('#connected-device button.ptz-goto-home'),
       ptz_pad: $('#connected-device div.ptz-pad-box'),
       zom_in: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-in'),
-      zom_out: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-ot')
+      zom_out: $('#connected-device div.ptz-zom-ctl-box button.ptz-zom-ot'),
+      btn_streams: $('#connected-device .show-streams-btn'),
+      stream_mode: $('input[name="stream-mode"]')
     };
     this.selected_address = '';
     this.device_connected = false;
     this.ptz_moving = false;
     this.snapshot_w = 400;
     this.snapshot_h = 300;
+    this.stream_mode = 'snapshot'; // 'snapshot' or 'mjpeg'
+    this.streams = null;
+    this.mjpegUrl = null;
+    this.snapshotUrl = null;
   }
 
   OnvifManager.prototype.init = function () {
@@ -91,6 +104,20 @@
     this.el['zom_out'].on('mouseup', this.ptzStop.bind(this));
     this.el['zom_out'].on('touchstart', this.ptzMove.bind(this));
     this.el['zom_out'].on('touchend', this.ptzStop.bind(this));
+
+    // Stream mode change handler
+    this.el['stream_mode'].on('change', this.onStreamModeChange.bind(this));
+
+    // Show streams button handler
+    this.el['btn_streams'].on('click', this.showStreamsModal.bind(this));
+
+    // Copy URL button handlers
+    $('.copy-url-btn').on('click', function() {
+      const target = $(this).data('target');
+      const input = $(target);
+      input.select();
+      document.execCommand('copy');
+    });
   };
 
   OnvifManager.prototype.adjustSize = function () {
@@ -157,6 +184,8 @@
         this.ptzStopCallback(data);
       } else if (id === 'ptzHome') {
         this.ptzHomeCallback(data);
+      } else if (id === 'getStreams') {
+        this.getStreamsCallback(data);
       }
     }.bind(this);
   };
@@ -179,12 +208,25 @@
   };
 
   OnvifManager.prototype.disconnectDevice = function () {
+    // Stop MJPEG stream if active
+    this.stopMjpegStream();
+
     this.el['img_snp'].removeAttr('src');
     this.el['div_pnl'].hide();
     this.el['frm_con'].show();
     this.device_connected = false;
     this.disabledLoginForm(false);
     this.el['btn_con'].text('Connect');
+
+    // Reset stream state
+    this.stream_mode = 'snapshot';
+    this.streams = null;
+    this.mjpegUrl = null;
+    this.snapshotUrl = null;
+
+    // Reset UI to snapshot mode
+    $('input[name="stream-mode"][value="snapshot"]').prop('checked', true).parent().addClass('active');
+    $('input[name="stream-mode"][value="mjpeg"]').parent().removeClass('active');
   };
 
   OnvifManager.prototype.connectDevice = function () {
@@ -206,17 +248,47 @@
 
   OnvifManager.prototype.startDiscoveryCallback = function (data) {
     const devices = data.result;
-    this.el['sel_dev'].empty();
-    this.el['sel_dev'].append($('<option>Select a device</option>'));
-    let n = 0;
+    const currentSelection = this.el['sel_dev'].val();
+
+    // Get list of existing device addresses in the dropdown (exclude placeholders)
+    const existingAddresses = {};
+    const placeholders = ['Select a device', 'now searching...'];
+    this.el['sel_dev'].find('option').each(function() {
+      const val = $(this).val();
+      const text = $(this).text();
+      // Only count real device entries (has IP-like value)
+      if (val && !placeholders.includes(val) && !placeholders.includes(text)) {
+        existingAddresses[val] = true;
+      }
+    });
+
+    // Check if this is the first population (only has placeholder or no real devices)
+    const isFirstPopulation = Object.keys(existingAddresses).length === 0;
+
+    if (isFirstPopulation) {
+      // First time - clear and add proper placeholder
+      this.el['sel_dev'].empty();
+      this.el['sel_dev'].append($('<option>Select a device</option>'));
+    }
+
+    let n = Object.keys(existingAddresses).length;
     for (const key in devices) {
       const device = devices[key];
-      const option_el = $('<option></option>');
-      option_el.val(device.address);
-      option_el.text(device.name + ' (' + device.address + ')');
-      this.el['sel_dev'].append(option_el);
-      n++;
+      // Only add if not already in the list
+      if (!existingAddresses[device.address]) {
+        const option_el = $('<option></option>');
+        option_el.val(device.address);
+        option_el.text(device.name + ' (' + device.address + ')');
+        this.el['sel_dev'].append(option_el);
+        n++;
+      }
     }
+
+    // Restore selection if it was a valid device (not placeholder)
+    if (currentSelection && !placeholders.includes(currentSelection)) {
+      this.el['sel_dev'].val(currentSelection);
+    }
+
     if (n === 0) {
       this.showMessageModal(
         'Error',
@@ -231,6 +303,18 @@
     this.el['btn_con'].prop('disabled', false);
     if (data.result) {
       this.selected_address = this.el['sel_dev'].val();
+
+      // Store stream info
+      if (data.result.streams) {
+        this.streams = data.result.streams;
+      }
+      if (data.result.mjpegUrl) {
+        this.mjpegUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.mjpegUrl;
+      }
+      if (data.result.snapshotUrl) {
+        this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
+      }
+
       this.showConnectedDeviceInfo(this.selected_address, data.result);
       this.el['btn_con'].text('Disconnect');
       this.el['frm_con'].hide();
@@ -249,6 +333,56 @@
       );
       this.device_connected = false;
     }
+  };
+
+  OnvifManager.prototype.getStreamsCallback = function (data) {
+    if (data.result) {
+      this.streams = data.result;
+    }
+  };
+
+  OnvifManager.prototype.onStreamModeChange = function (event) {
+    this.stream_mode = $(event.target).val();
+
+    if (this.stream_mode === 'mjpeg') {
+      this.startMjpegStream();
+    } else {
+      this.stopMjpegStream();
+      if (this.device_connected) {
+        this.fetchSnapshot();
+      }
+    }
+  };
+
+  OnvifManager.prototype.startMjpegStream = function () {
+    if (this.mjpegUrl) {
+      // Stop any existing stream first
+      this.el['img_snp'].attr('src', '');
+      // Small delay to ensure browser closes old connection
+      setTimeout(function() {
+        // Add timestamp to prevent caching
+        this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
+      }.bind(this), 50);
+    }
+  };
+
+  OnvifManager.prototype.stopMjpegStream = function () {
+    // Remove the src to stop the MJPEG stream
+    this.el['img_snp'].attr('src', '');
+  };
+
+  OnvifManager.prototype.showStreamsModal = function () {
+    const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
+
+    // Set stream URLs in the modal
+    if (this.streams) {
+      this.el['mdl_str'].find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');
+      this.el['mdl_str'].find('.stream-url-http').val(this.streams.http || 'Not available');
+    }
+    this.el['mdl_str'].find('.stream-url-mjpeg').val(this.mjpegUrl || 'Not available');
+    this.el['mdl_str'].find('.stream-url-snapshot').val(this.snapshotUrl || 'Not available');
+
+    this.el['mdl_str'].modal('show');
   };
 
   OnvifManager.prototype.showMessageModal = function (title, message) {
@@ -273,20 +407,28 @@
 
   OnvifManager.prototype.fetchSnapshotCallback = function (data) {
     if (data.result) {
-      this.el['img_snp'].attr('src', data.result);
+      // Only update image if in snapshot mode (not MJPEG)
+      if (this.stream_mode === 'snapshot') {
+        this.el['img_snp'].attr('src', data.result);
+      }
       window.setTimeout(
         function () {
-          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth;
-          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight;
+          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth || 400;
+          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight || 300;
           this.adjustSize();
-          if (this.device_connected === true) {
+          // Only continue fetching if connected and in snapshot mode
+          if (this.device_connected === true && this.stream_mode === 'snapshot') {
             this.fetchSnapshot();
           }
         }.bind(this),
-        10
+        snapshotInterval
       );
     } else if (data.error) {
       console.log(data.error);
+      // Retry after error with a longer delay
+      if (this.device_connected === true && this.stream_mode === 'snapshot') {
+        window.setTimeout(this.fetchSnapshot.bind(this), 1000);
+      }
     }
   };
 

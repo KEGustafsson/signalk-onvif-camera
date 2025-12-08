@@ -31,6 +31,7 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const devcert = require('devcert');
 const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/validation');
 
@@ -50,6 +51,15 @@ module.exports = function createPlugin(app) {
   let password;
   let certStatus = false;
   let startServer;
+  let autoDiscoveryInterval;
+  let autoDiscoveryTimer = null;
+  let startupDiscoveryTimer = null;
+  let snapshotInterval;
+  let enableSignalKIntegration;
+  let discoverOnStart;
+  let startupDiscoveryDelay;
+  let cameraConfigs = {};
+  let mjpegStreams = new Map(); // Track active MJPEG streams
 
   plugin.start = function (options, _restartPlugin) {
     userName = options.userName;
@@ -57,7 +67,36 @@ module.exports = function createPlugin(app) {
     ipAddress = options.ipAddress;
     port = options.port;
     secure = options.secure;
-    const browserData = [{ 'secure': secure,'port': port }];
+    autoDiscoveryInterval = options.autoDiscoveryInterval || 0;
+    snapshotInterval = options.snapshotInterval || 100;
+    enableSignalKIntegration = options.enableSignalKIntegration || false;
+    discoverOnStart = options.discoverOnStart !== false; // Default true
+    startupDiscoveryDelay = options.startupDiscoveryDelay || 5;
+
+    // Build camera-specific config map
+    cameraConfigs = {};
+    if (options.cameras && Array.isArray(options.cameras)) {
+      options.cameras.forEach(cam => {
+        if (cam.address) {
+          // Sanitize nickname for Signal K path (alphanumeric and underscore only)
+          const rawNickname = cam.nickname || cam.name || cam.address;
+          const sanitizedNickname = rawNickname.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
+          cameraConfigs[cam.address] = {
+            name: cam.name || cam.address,
+            nickname: sanitizedNickname,
+            userName: cam.userName || userName,
+            password: cam.password || password
+          };
+        }
+      });
+    }
+
+    const browserData = [{
+      'secure': secure,
+      'port': port,
+      'snapshotInterval': snapshotInterval
+    }];
     fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
 
     if ((secure) && (!fs.existsSync('./cert'))){
@@ -103,6 +142,16 @@ module.exports = function createPlugin(app) {
             httpServer: webServer
           });
           wsServer.on('request', wsServerRequest);
+
+          // Start auto-discovery timer if configured
+          if (autoDiscoveryInterval > 0) {
+            setupAutoDiscovery();
+          }
+
+          // Run startup discovery if enabled
+          if (discoverOnStart) {
+            runStartupDiscovery();
+          }
         }
       } else {
         clearInterval(startServer);
@@ -114,12 +163,150 @@ module.exports = function createPlugin(app) {
           httpServer: webServer
         });
         wsServer.on('request', wsServerRequest);
+
+        // Start auto-discovery timer if configured
+        if (autoDiscoveryInterval > 0) {
+          setupAutoDiscovery();
+        }
+
+        // Run startup discovery if enabled
+        if (discoverOnStart) {
+          runStartupDiscovery();
+        }
       }
     }, 1000);
   };
 
+  // Setup automatic periodic discovery
+  function setupAutoDiscovery() {
+    if (autoDiscoveryTimer) {
+      clearInterval(autoDiscoveryTimer);
+    }
+
+    console.log(`Auto-discovery enabled: every ${autoDiscoveryInterval} seconds`);
+
+    autoDiscoveryTimer = setInterval(() => {
+      app.debug('Running auto-discovery...');
+      onvif.startProbe(ipAddress)
+        .then((device_list) => {
+          device_list.forEach((device) => {
+            const odevice = new onvif.OnvifDevice({
+              xaddr: device.xaddrs[0]
+            });
+            const addr = odevice.address;
+            const deviceName = (device.name || addr).replace(/%20/g, ' ');
+
+            if (!devices[addr]) {
+              devices[addr] = odevice;
+              deviceNames[addr] = deviceName;
+              app.debug(`Auto-discovered new camera: ${deviceName} (${addr})`);
+
+              // Publish discovery to Signal K if enabled
+              if (enableSignalKIntegration && app.handleMessage) {
+                const nickname = getCameraNickname(addr);
+                app.handleMessage(plugin.id, {
+                  updates: [{
+                    source: { label: plugin.id },
+                    timestamp: new Date().toISOString(),
+                    values: [{
+                      path: `sensors.camera.${nickname}`,
+                      value: {
+                        address: addr,
+                        discovered: true,
+                        connected: false
+                      }
+                    }]
+                  }]
+                });
+              }
+            }
+          });
+        })
+        .catch((error) => {
+          console.error('Auto-discovery error:', error.message);
+        });
+    }, autoDiscoveryInterval * 1000);
+  }
+
+  // Run discovery once at startup after a delay
+  function runStartupDiscovery() {
+    app.debug(`Startup discovery scheduled in ${startupDiscoveryDelay} seconds...`);
+
+    startupDiscoveryTimer = setTimeout(() => {
+      app.debug('Running startup discovery...');
+      onvif.startProbe(ipAddress)
+        .then((device_list) => {
+          app.debug(`Startup discovery found ${device_list.length} device(s)`);
+          device_list.forEach((device) => {
+            const odevice = new onvif.OnvifDevice({
+              xaddr: device.xaddrs[0]
+            });
+            const addr = odevice.address;
+            const deviceName = (device.name || addr).replace(/%20/g, ' ');
+
+            if (!devices[addr]) {
+              devices[addr] = odevice;
+              deviceNames[addr] = deviceName;
+              app.debug(`Startup discovered camera: ${deviceName} (${addr})`);
+            }
+
+            // Auto-connect pre-configured cameras and publish to Signal K
+            const camConfig = cameraConfigs[addr];
+            if (camConfig && enableSignalKIntegration) {
+              // Set auth and initialize device
+              odevice.setAuth(camConfig.userName, camConfig.password);
+              odevice.init((error, result) => {
+                if (error) {
+                  app.debug(`Failed to initialize camera ${addr}: ${error.message}`);
+                  return;
+                }
+                app.debug(`Auto-connected to pre-configured camera: ${addr}`);
+                publishCameraToSignalK(addr, result);
+              });
+            } else if (enableSignalKIntegration && app.handleMessage) {
+              // Just publish discovery info for non-configured cameras
+              const nickname = getCameraNickname(addr);
+              app.handleMessage(plugin.id, {
+                updates: [{
+                  source: { label: plugin.id },
+                  timestamp: new Date().toISOString(),
+                  values: [{
+                    path: `sensors.camera.${nickname}`,
+                    value: {
+                      address: addr,
+                      discovered: true,
+                      connected: false
+                    }
+                  }]
+                }]
+              });
+            }
+          });
+        })
+        .catch((error) => {
+          app.debug('Startup discovery error:', error.message);
+        });
+    }, startupDiscoveryDelay * 1000);
+  }
+
   plugin.stop = function stop() {
     clearInterval(startServer);
+    if (autoDiscoveryTimer) {
+      clearInterval(autoDiscoveryTimer);
+      autoDiscoveryTimer = null;
+    }
+    if (startupDiscoveryTimer) {
+      clearTimeout(startupDiscoveryTimer);
+      startupDiscoveryTimer = null;
+    }
+    // Clean up MJPEG streams
+    mjpegStreams.forEach((stream, key) => {
+      if (stream.timer) {
+        clearInterval(stream.timer);
+      }
+    });
+    mjpegStreams.clear();
+
     if (webServer) {
       wsServer.shutDown();
       webServer.close(() => {
@@ -155,11 +342,38 @@ module.exports = function createPlugin(app) {
       },
       userName: {
         type: 'string',
-        title: 'ONVIF username for camera(s)'
+        title: 'Default ONVIF username for camera(s)'
       },
       password: {
         type: 'string',
-        title: 'ONVIF password for camera(s)'
+        title: 'Default ONVIF password for camera(s)'
+      },
+      autoDiscoveryInterval: {
+        type: 'number',
+        title: 'Auto-discovery interval in seconds (0 to disable)',
+        default: 0
+      },
+      snapshotInterval: {
+        type: 'number',
+        title: 'Snapshot refresh interval in milliseconds',
+        default: 100,
+        minimum: 50
+      },
+      enableSignalKIntegration: {
+        type: 'boolean',
+        title: 'Publish camera data to Signal K paths',
+        default: false
+      },
+      discoverOnStart: {
+        type: 'boolean',
+        title: 'Run camera discovery when plugin starts',
+        default: true
+      },
+      startupDiscoveryDelay: {
+        type: 'number',
+        title: 'Delay before startup discovery in seconds',
+        default: 5,
+        minimum: 1
       },
       cameras: {
         type: 'array',
@@ -171,6 +385,22 @@ module.exports = function createPlugin(app) {
             address: {
               type: 'string',
               title: 'Camera address'
+            },
+            name: {
+              type: 'string',
+              title: 'Camera display name'
+            },
+            nickname: {
+              type: 'string',
+              title: 'Signal K path nickname (e.g., "bow", "stern", "mast"). Used in path: sensors.camera.[nickname]'
+            },
+            userName: {
+              type: 'string',
+              title: 'Camera-specific username (overrides default)'
+            },
+            password: {
+              type: 'string',
+              title: 'Camera-specific password (overrides default)'
             }
           }
         }
@@ -178,16 +408,51 @@ module.exports = function createPlugin(app) {
     }
   };
 
+  // Add UI schema for camera-specific passwords
+  plugin.uiSchema.cameras = {
+    items: {
+      password: {
+        'ui:widget': 'password'
+      }
+    }
+  };
+
   function httpServerRequest(req, res) {
-    let path = req.url.replace(/\?.*$/, '');
-    if (path.match(/\.{2,}/) || path.match(/[^a-zA-Z\d_\-./]/)) {
+    const urlParts = require('url').parse(req.url, true);
+    let reqPath = urlParts.pathname;
+
+    // Handle MJPEG streaming endpoint
+    if (reqPath === '/mjpeg') {
+      handleMjpegStream(req, res, urlParts.query);
+      return;
+    }
+
+    // Handle snapshot endpoint for direct HTTP access
+    if (reqPath === '/snapshot') {
+      handleSnapshotRequest(req, res, urlParts.query);
+      return;
+    }
+
+    // Handle stream info endpoint
+    if (reqPath === '/api/streams') {
+      handleStreamInfoRequest(req, res, urlParts.query);
+      return;
+    }
+
+    // Handle profiles endpoint
+    if (reqPath === '/api/profiles') {
+      handleProfilesRequest(req, res, urlParts.query);
+      return;
+    }
+
+    if (reqPath.match(/\.{2,}/) || reqPath.match(/[^a-zA-Z\d_\-./]/)) {
       httpServerResponse404(req.url, res);
       return;
     }
-    if (path === '/') {
-      path = '/index.html';
+    if (reqPath === '/') {
+      reqPath = '/index.html';
     }
-    const fpath = '.' + path;
+    const fpath = '.' + reqPath;
     fs.readFile(fpath, 'utf-8', function (err, data) {
       if (err) {
         httpServerResponse404(req.url, res);
@@ -199,6 +464,186 @@ module.exports = function createPlugin(app) {
         res.end();
       }
     });
+  }
+
+  // MJPEG streaming handler
+  function handleMjpegStream(req, res, query) {
+    const address = query.address;
+    const profileToken = query.profile;
+    if (!address) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Missing address parameter');
+      return;
+    }
+
+    const device = devices[address];
+    if (!device) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Device not found or not connected');
+      return;
+    }
+
+    // If profile token specified, switch to that profile
+    if (profileToken) {
+      device.changeProfile(profileToken);
+    }
+
+    const boundary = 'mjpegboundary';
+    res.writeHead(200, {
+      'Content-Type': `multipart/x-mixed-replace; boundary=${boundary}`,
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Pragma': 'no-cache'
+    });
+
+    const streamId = `${address}-${Date.now()}`;
+    let isActive = true;
+
+    const sendFrame = () => {
+      if (!isActive) return;
+
+      device.fetchSnapshot((error, result) => {
+        if (!isActive) return;
+
+        if (!error && result && result.body) {
+          const frame = result.body;
+          const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`;
+
+          try {
+            res.write(header);
+            res.write(frame);
+            res.write('\r\n');
+          } catch (e) {
+            isActive = false;
+            return;
+          }
+        }
+
+        if (isActive) {
+          setTimeout(sendFrame, snapshotInterval);
+        }
+      });
+    };
+
+    mjpegStreams.set(streamId, { timer: null, res });
+
+    req.on('close', () => {
+      isActive = false;
+      mjpegStreams.delete(streamId);
+    });
+
+    req.on('error', () => {
+      isActive = false;
+      mjpegStreams.delete(streamId);
+    });
+
+    sendFrame();
+  }
+
+  // Direct snapshot HTTP endpoint
+  function handleSnapshotRequest(req, res, query) {
+    const address = query.address;
+    const profileToken = query.profile;
+    if (!address) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end('Missing address parameter');
+      return;
+    }
+
+    const device = devices[address];
+    if (!device) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Device not found or not connected');
+      return;
+    }
+
+    // If profile token specified, switch to that profile
+    if (profileToken) {
+      device.changeProfile(profileToken);
+    }
+
+    device.fetchSnapshot((error, result) => {
+      if (error) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Failed to fetch snapshot: ' + error.message);
+        return;
+      }
+
+      const ct = result.headers['content-type'] || 'image/jpeg';
+      res.writeHead(200, {
+        'Content-Type': ct,
+        'Content-Length': result.body.length,
+        'Cache-Control': 'no-cache'
+      });
+      res.end(result.body);
+    });
+  }
+
+  // Stream URIs endpoint
+  function handleStreamInfoRequest(req, res, query) {
+    const address = query.address;
+    if (!address) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing address parameter' }));
+      return;
+    }
+
+    const device = devices[address];
+    if (!device) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Device not found' }));
+      return;
+    }
+
+    const profiles = device.getProfileList();
+    const streams = profiles.map(p => ({
+      name: p.name,
+      token: p.token,
+      rtsp: p.stream.rtsp,
+      http: p.stream.http,
+      udp: p.stream.udp,
+      snapshot: p.snapshot,
+      video: p.video,
+      audio: p.audio
+    }));
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ streams }));
+  }
+
+  // Profiles endpoint
+  function handleProfilesRequest(req, res, query) {
+    const address = query.address;
+    if (!address) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing address parameter' }));
+      return;
+    }
+
+    const device = devices[address];
+    if (!device) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Device not found' }));
+      return;
+    }
+
+    const profiles = device.getProfileList();
+    const currentProfile = device.getCurrentProfile();
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      profiles: profiles.map(p => ({
+        token: p.token,
+        name: p.name,
+        resolution: p.video && p.video.encoder ? {
+          width: p.video.encoder.resolution.width,
+          height: p.video.encoder.resolution.height
+        } : null,
+        framerate: p.video && p.video.encoder ? p.video.encoder.framerate : null,
+        encoding: p.video && p.video.encoder ? p.video.encoder.encoding : null
+      })),
+      current: currentProfile ? currentProfile.token : null
+    }));
   }
 
   function getContentType(fpath) {
@@ -258,6 +703,14 @@ module.exports = function createPlugin(app) {
           ptzStop(conn, params);
         } else if (method === 'ptzHome') {
           ptzHome(conn, params);
+        } else if (method === 'getProfiles') {
+          getProfiles(conn, params);
+        } else if (method === 'changeProfile') {
+          changeProfile(conn, params);
+        } else if (method === 'getStreams') {
+          getStreams(conn, params);
+        } else if (method === 'getDeviceInfo') {
+          getDeviceInfo(conn, params);
         }
       } catch (error) {
         console.error('Invalid JSON received from WebSocket:', error.message);
@@ -274,24 +727,26 @@ module.exports = function createPlugin(app) {
   }
 
   let devices = {};
+  let deviceNames = {};
   function startDiscovery(conn) {
-    devices = {};
-    const names = {};
     onvif
       .startProbe(ipAddress)
       .then((device_list) => {
+        // Clear devices only on successful new discovery
+        devices = {};
+        deviceNames = {};
         device_list.forEach((device) => {
           const odevice = new onvif.OnvifDevice({
             xaddr: device.xaddrs[0]
           });
           const addr = odevice.address;
           devices[addr] = odevice;
-          names[addr] = (device.name).replace(/%20/g, ' ');
+          deviceNames[addr] = (device.name).replace(/%20/g, ' ');
         });
         const devs = {};
         for (const addr in devices) {
           devs[addr] = {
-            name: names[addr],
+            name: deviceNames[addr],
             address: addr
           };
         }
@@ -299,8 +754,28 @@ module.exports = function createPlugin(app) {
         if (conn.connected) conn.send(JSON.stringify(res));
       })
       .catch((error) => {
-        const res = { id: 'connect', error: error.message };
-        if (conn.connected) conn.send(JSON.stringify(res));
+        // If discovery is in progress, return cached devices if available
+        if (error.message === 'Discovery already in progress' && Object.keys(devices).length > 0) {
+          app.debug('Discovery in progress, returning cached devices');
+          const devs = {};
+          for (const addr in devices) {
+            devs[addr] = {
+              name: deviceNames[addr] || addr,
+              address: addr
+            };
+          }
+          const res = { id: 'startDiscovery', result: devs };
+          if (conn.connected) conn.send(JSON.stringify(res));
+        } else if (error.message === 'Discovery already in progress') {
+          // No cached devices, wait and retry once
+          app.debug('Discovery in progress, waiting to retry...');
+          setTimeout(() => {
+            startDiscovery(conn);
+          }, 3000);
+        } else {
+          const res = { id: 'startDiscovery', error: error.message };
+          if (conn.connected) conn.send(JSON.stringify(res));
+        }
       });
   }
 
@@ -327,9 +802,19 @@ module.exports = function createPlugin(app) {
       return;
     }
 
-    if (userName) {
-      params.user = userName;
-      params.pass = password;
+    // Use per-camera credentials if available, otherwise use defaults
+    const camConfig = cameraConfigs[params.address];
+    let authUser = userName;
+    let authPass = password;
+
+    if (camConfig) {
+      authUser = camConfig.userName || userName;
+      authPass = camConfig.password || password;
+    }
+
+    if (authUser) {
+      params.user = authUser;
+      params.pass = authPass;
       device.setAuth(params.user, params.pass);
     }
 
@@ -338,10 +823,245 @@ module.exports = function createPlugin(app) {
       if (error) {
         res['error'] = error.toString();
       } else {
-        res['result'] = result;
+        // Include additional info in result
+        const currentProfile = device.getCurrentProfile();
+
+        res['result'] = {
+          ...result,
+          streams: currentProfile ? currentProfile.stream : null,
+          mjpegUrl: `/mjpeg?address=${encodeURIComponent(params.address)}`,
+          snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}`
+        };
+
+        // Publish to Signal K if enabled
+        if (enableSignalKIntegration) {
+          publishCameraToSignalK(params.address, result);
+        }
       }
       if (conn.connected) conn.send(JSON.stringify(res));
     });
+  }
+
+  // Get available profiles for a device
+  function getProfiles(conn, params) {
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = { id: 'getProfiles', error: error.message };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
+    if (!device) {
+      const res = { id: 'getProfiles', error: 'Device not found' };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const profiles = device.getProfileList();
+    const currentProfile = device.getCurrentProfile();
+
+    const res = {
+      id: 'getProfiles',
+      result: {
+        profiles: profiles.map(p => ({
+          token: p.token,
+          name: p.name,
+          resolution: p.video && p.video.encoder ? {
+            width: p.video.encoder.resolution.width,
+            height: p.video.encoder.resolution.height
+          } : null,
+          framerate: p.video && p.video.encoder ? p.video.encoder.framerate : null,
+          bitrate: p.video && p.video.encoder ? p.video.encoder.bitrate : null,
+          encoding: p.video && p.video.encoder ? p.video.encoder.encoding : null
+        })),
+        current: currentProfile ? currentProfile.token : null
+      }
+    };
+    if (conn.connected) conn.send(JSON.stringify(res));
+  }
+
+  // Change the active profile for a device
+  function changeProfile(conn, params) {
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = { id: 'changeProfile', error: error.message };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
+    if (!device) {
+      const res = { id: 'changeProfile', error: 'Device not found' };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const profileToken = params.token || params.index;
+    app.debug(`Changing profile for ${params.address} to token: ${profileToken}`);
+
+    const newProfile = device.changeProfile(profileToken);
+
+    if (newProfile) {
+      app.debug(`Profile changed successfully. New profile: ${newProfile.name}, token: ${newProfile.token}`);
+      app.debug(`Snapshot URL: ${newProfile.snapshot}`);
+      app.debug(`Video resolution: ${newProfile.video?.encoder?.resolution?.width}x${newProfile.video?.encoder?.resolution?.height}`);
+
+      const res = {
+        id: 'changeProfile',
+        result: {
+          token: newProfile.token,
+          name: newProfile.name,
+          stream: newProfile.stream,
+          snapshot: newProfile.snapshot,
+          video: newProfile.video
+        }
+      };
+      if (conn.connected) conn.send(JSON.stringify(res));
+    } else {
+      app.debug(`Profile change failed - profile not found: ${profileToken}`);
+      const res = { id: 'changeProfile', error: 'Profile not found: ' + profileToken };
+      if (conn.connected) conn.send(JSON.stringify(res));
+    }
+  }
+
+  // Get stream URIs for a device
+  function getStreams(conn, params) {
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = { id: 'getStreams', error: error.message };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
+    if (!device) {
+      const res = { id: 'getStreams', error: 'Device not found' };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const currentProfile = device.getCurrentProfile();
+    if (!currentProfile) {
+      const res = { id: 'getStreams', error: 'No profile selected' };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const res = {
+      id: 'getStreams',
+      result: {
+        profile: currentProfile.name,
+        rtsp: currentProfile.stream.rtsp,
+        http: currentProfile.stream.http,
+        udp: currentProfile.stream.udp,
+        snapshot: currentProfile.snapshot,
+        mjpeg: `/mjpeg?address=${encodeURIComponent(params.address)}`
+      }
+    };
+    if (conn.connected) conn.send(JSON.stringify(res));
+  }
+
+  // Get detailed device info
+  function getDeviceInfo(conn, params) {
+    try {
+      validateDeviceAddress(params.address);
+    } catch (error) {
+      const res = { id: 'getDeviceInfo', error: error.message };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const device = devices[params.address];
+    if (!device) {
+      const res = { id: 'getDeviceInfo', error: 'Device not found' };
+      if (conn.connected) conn.send(JSON.stringify(res));
+      return;
+    }
+
+    const info = device.getInformation();
+    const profiles = device.getProfileList();
+    const currentProfile = device.getCurrentProfile();
+    const hasPtz = !!device.services.ptz;
+    const hasEvents = !!device.services.events;
+
+    const res = {
+      id: 'getDeviceInfo',
+      result: {
+        info,
+        hasPtz,
+        hasEvents,
+        profileCount: profiles.length,
+        currentProfile: currentProfile ? {
+          token: currentProfile.token,
+          name: currentProfile.name
+        } : null
+      }
+    };
+    if (conn.connected) conn.send(JSON.stringify(res));
+  }
+
+  // Get nickname for a camera address
+  function getCameraNickname(address) {
+    const camConfig = cameraConfigs[address];
+    if (camConfig && camConfig.nickname) {
+      return camConfig.nickname;
+    }
+    // Fallback: convert IP to safe path name
+    return address.replace(/\./g, '_');
+  }
+
+  // Get server's local IP address for constructing full URLs
+  function getServerIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        // Skip internal (loopback) and non-IPv4 addresses
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+    return 'localhost';
+  }
+
+  // Publish camera info to Signal K with nested values
+  function publishCameraToSignalK(address, deviceInfo) {
+    if (!app.handleMessage) return;
+
+    const nickname = getCameraNickname(address);
+    const basePath = `sensors.camera.${nickname}`;
+
+    // Build full URLs for snapshot and MJPEG
+    const protocol = secure ? 'https' : 'http';
+    const serverIP = getServerIP();
+    const baseUrl = `${protocol}://${serverIP}:${port}`;
+
+    // Build nested value object with only snapshot and MJPEG paths
+    const cameraData = {
+      manufacturer: deviceInfo.Manufacturer || 'Unknown',
+      model: deviceInfo.Model || 'Unknown',
+      address: address,
+      connected: true,
+      snapshot: `${baseUrl}/snapshot?address=${encodeURIComponent(address)}`,
+      mjpeg: `${baseUrl}/mjpeg?address=${encodeURIComponent(address)}`
+    };
+
+    const delta = {
+      updates: [{
+        source: { label: plugin.id },
+        timestamp: new Date().toISOString(),
+        values: [{
+          path: basePath,
+          value: cameraData
+        }]
+      }]
+    };
+
+    app.handleMessage(plugin.id, delta);
   }
 
   function fetchSnapshot(conn, params) {
@@ -365,6 +1085,18 @@ module.exports = function createPlugin(app) {
       if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
+
+    // If profile token specified, switch to that profile first
+    if (params.profile) {
+      device.changeProfile(params.profile);
+    }
+
+    // Log current profile being used for snapshot
+    const currentProfile = device.getCurrentProfile();
+    if (currentProfile) {
+      app.debug(`Fetching snapshot - profile: ${currentProfile.name} (${currentProfile.token}), snapshot URL: ${currentProfile.snapshot}`);
+    }
+
     device.fetchSnapshot((error, result) => {
       const res = { id: 'fetchSnapshot' };
       if (error) {
