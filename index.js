@@ -468,6 +468,7 @@ module.exports = function createPlugin(app) {
   // MJPEG streaming handler
   function handleMjpegStream(req, res, query) {
     const address = query.address;
+    const profileToken = query.profile;
     if (!address) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('Missing address parameter');
@@ -479,6 +480,11 @@ module.exports = function createPlugin(app) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Device not found or not connected');
       return;
+    }
+
+    // If profile token specified, switch to that profile
+    if (profileToken) {
+      device.changeProfile(profileToken);
     }
 
     const boundary = 'mjpegboundary';
@@ -536,6 +542,7 @@ module.exports = function createPlugin(app) {
   // Direct snapshot HTTP endpoint
   function handleSnapshotRequest(req, res, query) {
     const address = query.address;
+    const profileToken = query.profile;
     if (!address) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('Missing address parameter');
@@ -547,6 +554,11 @@ module.exports = function createPlugin(app) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Device not found or not connected');
       return;
+    }
+
+    // If profile token specified, switch to that profile
+    if (profileToken) {
+      device.changeProfile(profileToken);
     }
 
     device.fetchSnapshot((error, result) => {
@@ -829,8 +841,8 @@ module.exports = function createPlugin(app) {
           })),
           currentProfile: currentProfile ? currentProfile.token : null,
           streams: currentProfile ? currentProfile.stream : null,
-          mjpegUrl: `/mjpeg?address=${encodeURIComponent(params.address)}`,
-          snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}`
+          mjpegUrl: `/mjpeg?address=${encodeURIComponent(params.address)}${currentProfile ? '&profile=' + encodeURIComponent(currentProfile.token) : ''}`,
+          snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}${currentProfile ? '&profile=' + encodeURIComponent(currentProfile.token) : ''}`
         };
 
         // Publish to Signal K if enabled

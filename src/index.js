@@ -346,6 +346,14 @@
 
   OnvifManager.prototype.changeProfileCallback = function (data) {
     if (data.result) {
+      // Update current profile token
+      if (data.result.token) {
+        this.currentProfile = data.result.token;
+        // Update MJPEG and snapshot URLs with new profile
+        const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
+        this.mjpegUrl = baseUrl + '/mjpeg?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(data.result.token);
+        this.snapshotUrl = baseUrl + '/snapshot?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(data.result.token);
+      }
       // Update streams with new profile data
       if (data.result.stream) {
         this.streams = data.result.stream;
@@ -393,8 +401,13 @@
 
   OnvifManager.prototype.startMjpegStream = function () {
     if (this.mjpegUrl) {
-      // Add timestamp to prevent caching
-      this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
+      // Stop any existing stream first
+      this.el['img_snp'].attr('src', '');
+      // Small delay to ensure browser closes old connection
+      setTimeout(function() {
+        // Add timestamp to prevent caching
+        this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
+      }.bind(this), 50);
     }
   };
 
