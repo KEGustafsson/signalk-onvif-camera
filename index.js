@@ -31,6 +31,7 @@ const https = require('https');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const devcert = require('devcert');
 const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/validation');
 
@@ -1013,6 +1014,20 @@ module.exports = function createPlugin(app) {
     return address.replace(/\./g, '_');
   }
 
+  // Get server's local IP address for constructing full URLs
+  function getServerIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+      for (const iface of interfaces[name]) {
+        // Skip internal (loopback) and non-IPv4 addresses
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+    return 'localhost';
+  }
+
   // Publish camera info to Signal K with nested values
   function publishCameraToSignalK(address, deviceInfo) {
     if (!app.handleMessage) return;
@@ -1020,14 +1035,19 @@ module.exports = function createPlugin(app) {
     const nickname = getCameraNickname(address);
     const basePath = `sensors.camera.${nickname}`;
 
+    // Build full URLs for snapshot and MJPEG
+    const protocol = secure ? 'https' : 'http';
+    const serverIP = getServerIP();
+    const baseUrl = `${protocol}://${serverIP}:${port}`;
+
     // Build nested value object with only snapshot and MJPEG paths
     const cameraData = {
       manufacturer: deviceInfo.Manufacturer || 'Unknown',
       model: deviceInfo.Model || 'Unknown',
       address: address,
       connected: true,
-      snapshot: `/snapshot?address=${encodeURIComponent(address)}`,
-      mjpeg: `/mjpeg?address=${encodeURIComponent(address)}`
+      snapshot: `${baseUrl}/snapshot?address=${encodeURIComponent(address)}`,
+      mjpeg: `${baseUrl}/mjpeg?address=${encodeURIComponent(address)}`
     };
 
     const delta = {
