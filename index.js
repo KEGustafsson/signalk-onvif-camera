@@ -260,8 +260,7 @@ module.exports = function createPlugin(app) {
                   return;
                 }
                 app.debug(`Auto-connected to pre-configured camera: ${addr}`);
-                const currentProfile = odevice.getCurrentProfile();
-                publishCameraToSignalK(addr, result, currentProfile);
+                publishCameraToSignalK(addr, result);
               });
             } else if (enableSignalKIntegration && app.handleMessage) {
               // Just publish discovery info for non-configured cameras
@@ -835,7 +834,7 @@ module.exports = function createPlugin(app) {
 
         // Publish to Signal K if enabled
         if (enableSignalKIntegration) {
-          publishCameraToSignalK(params.address, result, currentProfile);
+          publishCameraToSignalK(params.address, result);
         }
       }
       if (conn.connected) conn.send(JSON.stringify(res));
@@ -1015,44 +1014,21 @@ module.exports = function createPlugin(app) {
   }
 
   // Publish camera info to Signal K with nested values
-  function publishCameraToSignalK(address, deviceInfo, profile) {
+  function publishCameraToSignalK(address, deviceInfo) {
     if (!app.handleMessage) return;
 
     const nickname = getCameraNickname(address);
     const basePath = `sensors.camera.${nickname}`;
 
-    // Build nested value object
+    // Build nested value object with only snapshot and MJPEG paths
     const cameraData = {
       manufacturer: deviceInfo.Manufacturer || 'Unknown',
       model: deviceInfo.Model || 'Unknown',
       address: address,
-      connected: true
+      connected: true,
+      snapshot: `/snapshot?address=${encodeURIComponent(address)}`,
+      mjpeg: `/mjpeg?address=${encodeURIComponent(address)}`
     };
-
-    // Add stream info if available
-    if (profile && profile.stream) {
-      cameraData.stream = {
-        rtsp: profile.stream.rtsp || null,
-        http: profile.stream.http || null,
-        udp: profile.stream.udp || null
-      };
-    }
-
-    // Add resolution info if available
-    if (profile && profile.video && profile.video.encoder) {
-      cameraData.resolution = {
-        width: profile.video.encoder.resolution.width,
-        height: profile.video.encoder.resolution.height
-      };
-      cameraData.encoding = profile.video.encoder.encoding || null;
-      cameraData.framerate = profile.video.encoder.framerate || null;
-      cameraData.bitrate = profile.video.encoder.bitrate || null;
-    }
-
-    // Add profile name if available
-    if (profile) {
-      cameraData.profile = profile.name || null;
-    }
 
     const delta = {
       updates: [{
