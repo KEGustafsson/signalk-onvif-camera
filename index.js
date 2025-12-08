@@ -186,7 +186,7 @@ module.exports = function createPlugin(app) {
     console.log(`Auto-discovery enabled: every ${autoDiscoveryInterval} seconds`);
 
     autoDiscoveryTimer = setInterval(() => {
-      console.log('Running auto-discovery...');
+      app.debug('Running auto-discovery...');
       onvif.startProbe(ipAddress)
         .then((device_list) => {
           device_list.forEach((device) => {
@@ -196,7 +196,7 @@ module.exports = function createPlugin(app) {
             const addr = odevice.address;
             if (!devices[addr]) {
               devices[addr] = odevice;
-              console.log(`Auto-discovered new camera: ${addr}`);
+              app.debug(`Auto-discovered new camera: ${addr}`);
 
               // Publish discovery to Signal K if enabled
               if (enableSignalKIntegration && app.handleMessage) {
@@ -227,13 +227,13 @@ module.exports = function createPlugin(app) {
 
   // Run discovery once at startup after a delay
   function runStartupDiscovery() {
-    console.log(`Startup discovery scheduled in ${startupDiscoveryDelay} seconds...`);
+    app.debug(`Startup discovery scheduled in ${startupDiscoveryDelay} seconds...`);
 
     startupDiscoveryTimer = setTimeout(() => {
-      console.log('Running startup discovery...');
+      app.debug('Running startup discovery...');
       onvif.startProbe(ipAddress)
         .then((device_list) => {
-          console.log(`Startup discovery found ${device_list.length} device(s)`);
+          app.debug(`Startup discovery found ${device_list.length} device(s)`);
           device_list.forEach((device) => {
             const odevice = new onvif.OnvifDevice({
               xaddr: device.xaddrs[0]
@@ -241,7 +241,7 @@ module.exports = function createPlugin(app) {
             const addr = odevice.address;
             if (!devices[addr]) {
               devices[addr] = odevice;
-              console.log(`Startup discovered camera: ${addr}`);
+              app.debug(`Startup discovered camera: ${addr}`);
             }
 
             // Auto-connect pre-configured cameras and publish to Signal K
@@ -251,10 +251,10 @@ module.exports = function createPlugin(app) {
               odevice.setAuth(camConfig.userName, camConfig.password);
               odevice.init((error, result) => {
                 if (error) {
-                  console.error(`Failed to initialize camera ${addr}: ${error.message}`);
+                  app.debug(`Failed to initialize camera ${addr}: ${error.message}`);
                   return;
                 }
-                console.log(`Auto-connected to pre-configured camera: ${addr}`);
+                app.debug(`Auto-connected to pre-configured camera: ${addr}`);
                 const currentProfile = odevice.getCurrentProfile();
                 publishCameraToSignalK(addr, result, currentProfile);
               });
@@ -279,7 +279,7 @@ module.exports = function createPlugin(app) {
           });
         })
         .catch((error) => {
-          console.error('Startup discovery error:', error.message);
+          app.debug('Startup discovery error:', error.message);
         });
     }, startupDiscoveryDelay * 1000);
   }
@@ -714,24 +714,26 @@ module.exports = function createPlugin(app) {
   }
 
   let devices = {};
+  let deviceNames = {};
   function startDiscovery(conn) {
-    devices = {};
-    const names = {};
     onvif
       .startProbe(ipAddress)
       .then((device_list) => {
+        // Clear devices only on successful new discovery
+        devices = {};
+        deviceNames = {};
         device_list.forEach((device) => {
           const odevice = new onvif.OnvifDevice({
             xaddr: device.xaddrs[0]
           });
           const addr = odevice.address;
           devices[addr] = odevice;
-          names[addr] = (device.name).replace(/%20/g, ' ');
+          deviceNames[addr] = (device.name).replace(/%20/g, ' ');
         });
         const devs = {};
         for (const addr in devices) {
           devs[addr] = {
-            name: names[addr],
+            name: deviceNames[addr],
             address: addr
           };
         }
@@ -739,8 +741,28 @@ module.exports = function createPlugin(app) {
         if (conn.connected) conn.send(JSON.stringify(res));
       })
       .catch((error) => {
-        const res = { id: 'connect', error: error.message };
-        if (conn.connected) conn.send(JSON.stringify(res));
+        // If discovery is in progress, return cached devices if available
+        if (error.message === 'Discovery already in progress' && Object.keys(devices).length > 0) {
+          app.debug('Discovery in progress, returning cached devices');
+          const devs = {};
+          for (const addr in devices) {
+            devs[addr] = {
+              name: deviceNames[addr] || addr,
+              address: addr
+            };
+          }
+          const res = { id: 'startDiscovery', result: devs };
+          if (conn.connected) conn.send(JSON.stringify(res));
+        } else if (error.message === 'Discovery already in progress') {
+          // No cached devices, wait and retry once
+          app.debug('Discovery in progress, waiting to retry...');
+          setTimeout(() => {
+            startDiscovery(conn);
+          }, 3000);
+        } else {
+          const res = { id: 'startDiscovery', error: error.message };
+          if (conn.connected) conn.send(JSON.stringify(res));
+        }
       });
   }
 
