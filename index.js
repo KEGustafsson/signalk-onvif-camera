@@ -912,9 +912,15 @@ module.exports = function createPlugin(app) {
     }
 
     const profileToken = params.token || params.index;
+    app.debug(`Changing profile for ${params.address} to token: ${profileToken}`);
+
     const newProfile = device.changeProfile(profileToken);
 
     if (newProfile) {
+      app.debug(`Profile changed successfully. New profile: ${newProfile.name}, token: ${newProfile.token}`);
+      app.debug(`Snapshot URL: ${newProfile.snapshot}`);
+      app.debug(`Video resolution: ${newProfile.video?.encoder?.resolution?.width}x${newProfile.video?.encoder?.resolution?.height}`);
+
       const res = {
         id: 'changeProfile',
         result: {
@@ -927,6 +933,7 @@ module.exports = function createPlugin(app) {
       };
       if (conn.connected) conn.send(JSON.stringify(res));
     } else {
+      app.debug(`Profile change failed - profile not found: ${profileToken}`);
       const res = { id: 'changeProfile', error: 'Profile not found: ' + profileToken };
       if (conn.connected) conn.send(JSON.stringify(res));
     }
@@ -1094,6 +1101,18 @@ module.exports = function createPlugin(app) {
       if (conn.connected) conn.send(JSON.stringify(res));
       return;
     }
+
+    // If profile token specified, switch to that profile first
+    if (params.profile) {
+      device.changeProfile(params.profile);
+    }
+
+    // Log current profile being used for snapshot
+    const currentProfile = device.getCurrentProfile();
+    if (currentProfile) {
+      app.debug(`Fetching snapshot using profile: ${currentProfile.name} (${currentProfile.token})`);
+    }
+
     device.fetchSnapshot((error, result) => {
       const res = { id: 'fetchSnapshot' };
       if (error) {

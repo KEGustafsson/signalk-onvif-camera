@@ -317,6 +317,10 @@
         this.profiles = data.result.profiles;
         this.populateProfileSelect(data.result.profiles, data.result.currentProfile);
       }
+      // Store current profile token
+      if (data.result.currentProfile) {
+        this.currentProfile = data.result.currentProfile;
+      }
       if (data.result.streams) {
         this.streams = data.result.streams;
       }
@@ -364,6 +368,13 @@
   OnvifManager.prototype.onProfileChange = function () {
     const token = this.el['sel_profile'].val();
     if (token && this.selected_address) {
+      // Update current profile immediately to prevent race conditions
+      this.currentProfile = token;
+      // Update URLs with new profile
+      const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
+      this.mjpegUrl = baseUrl + '/mjpeg?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(token);
+      this.snapshotUrl = baseUrl + '/snapshot?address=' + encodeURIComponent(this.selected_address) + '&profile=' + encodeURIComponent(token);
+
       this.sendRequest('changeProfile', {
         address: this.selected_address,
         token: token
@@ -472,9 +483,14 @@
   };
 
   OnvifManager.prototype.fetchSnapshot = function () {
-    this.sendRequest('fetchSnapshot', {
+    const params = {
       address: this.selected_address
-    });
+    };
+    // Include current profile token if set
+    if (this.currentProfile) {
+      params.profile = this.currentProfile;
+    }
+    this.sendRequest('fetchSnapshot', params);
   };
 
   OnvifManager.prototype.fetchSnapshotCallback = function (data) {
