@@ -1116,7 +1116,7 @@ module.exports = function createPlugin(app) {
     // Log current profile being used for snapshot
     const currentProfile = device.getCurrentProfile();
     if (currentProfile) {
-      app.debug(`Fetching snapshot using profile: ${currentProfile.name} (${currentProfile.token})`);
+      app.debug(`Fetching snapshot - profile: ${currentProfile.name} (${currentProfile.token}), snapshot URL: ${currentProfile.snapshot}`);
     }
 
     device.fetchSnapshot((error, result) => {
