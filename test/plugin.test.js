@@ -72,7 +72,6 @@ describe('signalk-onvif-camera plugin', () => {
       const cameraProps = plugin.schema.properties.cameras.items.properties;
       expect(cameraProps.userName).toBeDefined();
       expect(cameraProps.password).toBeDefined();
-      expect(cameraProps.defaultProfile).toBeDefined();
     });
 
     test('should have camera-specific password hidden in uiSchema', () => {

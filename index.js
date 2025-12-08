@@ -85,8 +85,7 @@ module.exports = function createPlugin(app) {
             name: cam.name || cam.address,
             nickname: sanitizedNickname,
             userName: cam.userName || userName,
-            password: cam.password || password,
-            defaultProfile: cam.defaultProfile || null
+            password: cam.password || password
           };
         }
       });
@@ -402,10 +401,6 @@ module.exports = function createPlugin(app) {
             password: {
               type: 'string',
               title: 'Camera-specific password (overrides default)'
-            },
-            defaultProfile: {
-              type: 'string',
-              title: 'Default media profile token (leave empty for auto)'
             }
           }
         }
@@ -828,27 +823,14 @@ module.exports = function createPlugin(app) {
       if (error) {
         res['error'] = error.toString();
       } else {
-        // Apply default profile if configured
-        if (camConfig && camConfig.defaultProfile) {
-          device.changeProfile(camConfig.defaultProfile);
-        }
-
         // Include additional info in result
-        const profiles = device.getProfileList();
         const currentProfile = device.getCurrentProfile();
 
         res['result'] = {
           ...result,
-          profiles: profiles.map(p => ({
-            token: p.token,
-            name: p.name,
-            resolution: p.video && p.video.encoder ? p.video.encoder.resolution : null,
-            encoding: p.video && p.video.encoder ? p.video.encoder.encoding : null
-          })),
-          currentProfile: currentProfile ? currentProfile.token : null,
           streams: currentProfile ? currentProfile.stream : null,
-          mjpegUrl: `/mjpeg?address=${encodeURIComponent(params.address)}${currentProfile ? '&profile=' + encodeURIComponent(currentProfile.token) : ''}`,
-          snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}${currentProfile ? '&profile=' + encodeURIComponent(currentProfile.token) : ''}`
+          mjpegUrl: `/mjpeg?address=${encodeURIComponent(params.address)}`,
+          snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}`
         };
 
         // Publish to Signal K if enabled
