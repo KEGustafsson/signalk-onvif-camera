@@ -41,6 +41,23 @@
     rawFile.send(null);
   }
 
+  // Helper function to get base path for URL construction
+  // Handles edge cases: root path, trailing slashes, etc.
+  function getBasePath() {
+    let pathname = window.location.pathname;
+    // Remove trailing slash if present (except for root)
+    if (pathname.length > 1 && pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+    // Get directory path (everything before the last /)
+    const lastSlashIndex = pathname.lastIndexOf('/');
+    if (lastSlashIndex === 0) {
+      // At root level
+      return '';
+    }
+    return pathname.substring(0, lastSlashIndex);
+  }
+
   /*-------------------------------------------------------------------
    * Constructor
    * ---------------------------------------------------------------- */
@@ -150,7 +167,11 @@
   };
 
   OnvifManager.prototype.initWebSocketConnection = function () {
-    const url = scheme + '://' + location.hostname + ':' + port;
+    // Use current page location for WebSocket (works with reverse proxy)
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host; // includes port if non-standard
+    const wsPath = getBasePath();
+    const url = wsProtocol + '//' + wsHost + wsPath;
     this.ws = new WebSocket(url);
     this.ws.onopen = function () {
       console.log('WebSocket connection established.');
@@ -308,15 +329,15 @@
       if (data.result.streams) {
         this.streams = data.result.streams;
       }
-      if (data.result.mjpegUrl) {
-        // Use relative URL to work properly behind reverse proxy
-        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-        this.mjpegUrl = basePath + data.result.mjpegUrl;
-      }
-      if (data.result.snapshotUrl) {
-        // Use relative URL to work properly behind reverse proxy
-        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
-        this.snapshotUrl = basePath + data.result.snapshotUrl;
+      // Use relative URLs to work properly behind reverse proxy
+      if (data.result.mjpegUrl || data.result.snapshotUrl) {
+        const basePath = getBasePath();
+        if (data.result.mjpegUrl) {
+          this.mjpegUrl = basePath + data.result.mjpegUrl;
+        }
+        if (data.result.snapshotUrl) {
+          this.snapshotUrl = basePath + data.result.snapshotUrl;
+        }
       }
 
       this.showConnectedDeviceInfo(this.selected_address, data.result);
