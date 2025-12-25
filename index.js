@@ -1035,10 +1035,9 @@ module.exports = function createPlugin(app) {
     const nickname = getCameraNickname(address);
     const basePath = `sensors.camera.${nickname}`;
 
-    // Build full URLs for snapshot and MJPEG
-    const protocol = secure ? 'https' : 'http';
-    const serverIP = getServerIP();
-    const baseUrl = `${protocol}://${serverIP}:${port}`;
+    // Use relative URLs for reverse proxy compatibility
+    // These will work from any Signal K access point (direct or proxied)
+    const pluginPath = '/plugins/signalk-onvif-camera';
 
     // Build nested value object with only snapshot and MJPEG paths
     const cameraData = {
@@ -1046,8 +1045,8 @@ module.exports = function createPlugin(app) {
       model: deviceInfo.Model || 'Unknown',
       address: address,
       connected: true,
-      snapshot: `${baseUrl}/snapshot?address=${encodeURIComponent(address)}`,
-      mjpeg: `${baseUrl}/mjpeg?address=${encodeURIComponent(address)}`
+      snapshot: `${pluginPath}/snapshot?address=${encodeURIComponent(address)}`,
+      mjpeg: `${pluginPath}/mjpeg?address=${encodeURIComponent(address)}`
     };
 
     const delta = {

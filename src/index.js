@@ -41,6 +41,23 @@
     rawFile.send(null);
   }
 
+  // Helper function to get base path for URL construction
+  // Handles edge cases: root path, trailing slashes, etc.
+  function getBasePath() {
+    let pathname = window.location.pathname;
+    // Remove trailing slash if present (except for root)
+    if (pathname.length > 1 && pathname.endsWith('/')) {
+      pathname = pathname.slice(0, -1);
+    }
+    // Get directory path (everything before the last /)
+    const lastSlashIndex = pathname.lastIndexOf('/');
+    if (lastSlashIndex === 0) {
+      // At root level
+      return '';
+    }
+    return pathname.substring(0, lastSlashIndex);
+  }
+
   /*-------------------------------------------------------------------
    * Constructor
    * ---------------------------------------------------------------- */
@@ -150,7 +167,11 @@
   };
 
   OnvifManager.prototype.initWebSocketConnection = function () {
-    const url = scheme + '://' + location.hostname + ':' + port;
+    // Use current page location for WebSocket (works with reverse proxy)
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsHost = window.location.host; // includes port if non-standard
+    const wsPath = getBasePath();
+    const url = wsProtocol + '//' + wsHost + wsPath;
     this.ws = new WebSocket(url);
     this.ws.onopen = function () {
       console.log('WebSocket connection established.');
@@ -308,11 +329,15 @@
       if (data.result.streams) {
         this.streams = data.result.streams;
       }
-      if (data.result.mjpegUrl) {
-        this.mjpegUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.mjpegUrl;
-      }
-      if (data.result.snapshotUrl) {
-        this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
+      // Use relative URLs to work properly behind reverse proxy
+      if (data.result.mjpegUrl || data.result.snapshotUrl) {
+        const basePath = getBasePath();
+        if (data.result.mjpegUrl) {
+          this.mjpegUrl = basePath + data.result.mjpegUrl;
+        }
+        if (data.result.snapshotUrl) {
+          this.snapshotUrl = basePath + data.result.snapshotUrl;
+        }
       }
 
       this.showConnectedDeviceInfo(this.selected_address, data.result);
@@ -372,15 +397,20 @@
   };
 
   OnvifManager.prototype.showStreamsModal = function () {
-    const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
+    // Construct full URLs using current page location (works with reverse proxy)
+    const protocol = window.location.protocol;
+    const host = window.location.host; // includes port if non-standard
 
     // Set stream URLs in the modal
     if (this.streams) {
       this.el['mdl_str'].find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');
       this.el['mdl_str'].find('.stream-url-http').val(this.streams.http || 'Not available');
     }
-    this.el['mdl_str'].find('.stream-url-mjpeg').val(this.mjpegUrl || 'Not available');
-    this.el['mdl_str'].find('.stream-url-snapshot').val(this.snapshotUrl || 'Not available');
+    // Convert relative URLs to absolute for display
+    const mjpegFullUrl = this.mjpegUrl ? (this.mjpegUrl.startsWith('http') ? this.mjpegUrl : protocol + '//' + host + this.mjpegUrl) : 'Not available';
+    const snapshotFullUrl = this.snapshotUrl ? (this.snapshotUrl.startsWith('http') ? this.snapshotUrl : protocol + '//' + host + this.snapshotUrl) : 'Not available';
+    this.el['mdl_str'].find('.stream-url-mjpeg').val(mjpegFullUrl);
+    this.el['mdl_str'].find('.stream-url-snapshot').val(snapshotFullUrl);
 
     this.el['mdl_str'].modal('show');
   };
