@@ -309,10 +309,14 @@
         this.streams = data.result.streams;
       }
       if (data.result.mjpegUrl) {
-        this.mjpegUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.mjpegUrl;
+        // Use relative URL to work properly behind reverse proxy
+        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+        this.mjpegUrl = basePath + data.result.mjpegUrl;
       }
       if (data.result.snapshotUrl) {
-        this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
+        // Use relative URL to work properly behind reverse proxy
+        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
+        this.snapshotUrl = basePath + data.result.snapshotUrl;
       }
 
       this.showConnectedDeviceInfo(this.selected_address, data.result);
@@ -372,15 +376,20 @@
   };
 
   OnvifManager.prototype.showStreamsModal = function () {
-    const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
+    // Construct full URLs using current page location (works with reverse proxy)
+    const protocol = window.location.protocol;
+    const host = window.location.host; // includes port if non-standard
 
     // Set stream URLs in the modal
     if (this.streams) {
       this.el['mdl_str'].find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');
       this.el['mdl_str'].find('.stream-url-http').val(this.streams.http || 'Not available');
     }
-    this.el['mdl_str'].find('.stream-url-mjpeg').val(this.mjpegUrl || 'Not available');
-    this.el['mdl_str'].find('.stream-url-snapshot').val(this.snapshotUrl || 'Not available');
+    // Convert relative URLs to absolute for display
+    const mjpegFullUrl = this.mjpegUrl ? (this.mjpegUrl.startsWith('http') ? this.mjpegUrl : protocol + '//' + host + this.mjpegUrl) : 'Not available';
+    const snapshotFullUrl = this.snapshotUrl ? (this.snapshotUrl.startsWith('http') ? this.snapshotUrl : protocol + '//' + host + this.snapshotUrl) : 'Not available';
+    this.el['mdl_str'].find('.stream-url-mjpeg').val(mjpegFullUrl);
+    this.el['mdl_str'].find('.stream-url-snapshot').val(snapshotFullUrl);
 
     this.el['mdl_str'].modal('show');
   };
