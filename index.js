@@ -32,7 +32,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const devcert = require('devcert');
+const selfsigned = require('selfsigned');
 const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/validation');
 
 module.exports = function createPlugin(app) {
@@ -101,19 +101,21 @@ module.exports = function createPlugin(app) {
 
     if ((secure) && (!fs.existsSync('./cert'))){
       fs.mkdirSync('./cert');
-      devcert.certificateFor([
-        'localhost'
-      ])
-        .then(({ key, cert }) => {
-          fs.writeFileSync(path.join(__dirname, 'cert/tls.key'), key);
-          fs.writeFileSync(path.join(__dirname, 'cert/tls.cert'), cert);
-          certStatus = true;
-          console.log('SSL certificate generated successfully');
-        })
-        .catch((error) => {
-          console.error('Failed to generate SSL certificate:', error.message);
-          setStatus('Certificate generation failed. Server cannot start in secure mode.');
+      try {
+        const attrs = [{ name: 'commonName', value: 'localhost' }];
+        const pems = selfsigned.generate(attrs, {
+          days: 365,
+          keySize: 2048,
+          algorithm: 'sha256'
         });
+        fs.writeFileSync(path.join(__dirname, 'cert/tls.key'), pems.private);
+        fs.writeFileSync(path.join(__dirname, 'cert/tls.cert'), pems.cert);
+        certStatus = true;
+        console.log('SSL certificate generated successfully');
+      } catch (error) {
+        console.error('Failed to generate SSL certificate:', error.message);
+        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+      }
     }
 
     try {
