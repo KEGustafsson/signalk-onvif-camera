@@ -65,6 +65,7 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 - v0.4.0, code refactoring
 - v0.5.0, improvements to streaming and viewing
 - v0.6.0, replace devcert with selfsigned
+- v0.6.1, extra console logs removed
 
 ## Credits
 https://github.com/futomi/node-onvif 

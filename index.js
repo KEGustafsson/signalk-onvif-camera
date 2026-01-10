@@ -111,7 +111,6 @@ module.exports = function createPlugin(app) {
         fs.writeFileSync(path.join(__dirname, 'cert/tls.key'), pems.private);
         fs.writeFileSync(path.join(__dirname, 'cert/tls.cert'), pems.cert);
         certStatus = true;
-        console.log('SSL certificate generated successfully');
       } catch (error) {
         console.error('Failed to generate SSL certificate:', error.message);
         setStatus('Certificate generation failed. Server cannot start in secure mode.');
@@ -185,7 +184,7 @@ module.exports = function createPlugin(app) {
       clearInterval(autoDiscoveryTimer);
     }
 
-    console.log(`Auto-discovery enabled: every ${autoDiscoveryInterval} seconds`);
+    app.debug(`Auto-discovery enabled: every ${autoDiscoveryInterval} seconds`);
 
     autoDiscoveryTimer = setInterval(() => {
       app.debug('Running auto-discovery...');
@@ -312,7 +311,7 @@ module.exports = function createPlugin(app) {
     if (webServer) {
       wsServer.shutDown();
       webServer.close(() => {
-        console.log('Onvif Camera server closed');
+        app.debug('Onvif Camera server closed');
       });
     }
   };
@@ -680,7 +679,7 @@ module.exports = function createPlugin(app) {
   function httpServerResponse404(url, res) {
     res.write('404 Not Found: ' + url);
     res.end();
-    console.log('HTTP : 404 Not Found : ' + url);
+    app.debug('HTTP : 404 Not Found : ' + url);
   }
 
   function wsServerRequest(request) {
@@ -1241,7 +1240,7 @@ function gracefulShutdown(signal) {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
 
-  console.log(`\n${signal} received. Shutting down gracefully...`);
+  app.debug(`\n${signal} received. Shutting down gracefully...`);
 
   // Stop all plugin instances
   if (global.__onvifPluginInstances) {
@@ -1258,7 +1257,7 @@ function gracefulShutdown(signal) {
 
   // Give servers time to close gracefully
   setTimeout(() => {
-    console.log('Shutdown complete');
+    app.debug('Shutdown complete');
     process.exit(0);
   }, 1000);
 }
