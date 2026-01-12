@@ -32,6 +32,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const selfsigned = require('selfsigned');
 const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/validation');
 
@@ -99,31 +100,62 @@ module.exports = function createPlugin(app) {
     }];
     fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
 
-    if ((secure) && (!fs.existsSync('./cert'))){
-      fs.mkdirSync('./cert');
+    // Use Signal K data directory for persistent certificate storage
+    const certDir = path.join(app.getDataDirPath(), 'cert');
+    const certKeyPath = path.join(certDir, 'tls.key');
+    const certFilePath = path.join(certDir, 'tls.cert');
+
+    // Check if certificate is expired or will expire within 7 days
+    function isCertificateExpired(certPath) {
       try {
-        const attrs = [{ name: 'commonName', value: 'localhost' }];
-        const pems = selfsigned.generate(attrs, {
-          days: 365,
-          keySize: 2048,
-          algorithm: 'sha256'
-        });
-        fs.writeFileSync(path.join(__dirname, 'cert/tls.key'), pems.private);
-        fs.writeFileSync(path.join(__dirname, 'cert/tls.cert'), pems.cert);
-        certStatus = true;
+        const certPem = fs.readFileSync(certPath, 'utf8');
+        const cert = new crypto.X509Certificate(certPem);
+        const expiryDate = new Date(cert.validTo);
+        const now = new Date();
+        const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        return expiryDate <= sevenDaysFromNow;
       } catch (error) {
-        console.error('Failed to generate SSL certificate:', error.message);
-        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+        app.debug(`Error checking certificate expiry: ${error.message}`);
+        return true; // If we can't read it, regenerate
       }
     }
 
-    try {
-      if (fs.existsSync(path.join(__dirname, 'cert/tls.key'))) {
-        certStatus = true;
+    // Generate new SSL certificate
+    function generateCertificate() {
+      fs.mkdirSync(certDir, { recursive: true });
+      const attrs = [{ name: 'commonName', value: 'localhost' }];
+      const pems = selfsigned.generate(attrs, {
+        days: 365,
+        keySize: 2048,
+        algorithm: 'sha256'
+      });
+      fs.writeFileSync(certKeyPath, pems.private);
+      fs.writeFileSync(certFilePath, pems.cert);
+      app.debug(`SSL certificates generated and stored in ${certDir}`);
+    }
+
+    if (secure) {
+      try {
+        const certExists = fs.existsSync(certFilePath) && fs.existsSync(certKeyPath);
+
+        if (!certExists) {
+          app.debug('SSL certificates not found, generating new certificates...');
+          generateCertificate();
+          certStatus = true;
+        } else if (isCertificateExpired(certFilePath)) {
+          app.debug('SSL certificate expired or expiring soon, regenerating...');
+          generateCertificate();
+          certStatus = true;
+        } else {
+          app.debug('SSL certificates found and valid');
+          certStatus = true;
+        }
+      } catch (error) {
+        console.error('Failed to generate SSL certificate:', error.message);
+        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+        certStatus = false;
+        return; // Don't start server if certificate generation failed
       }
-    } catch (error) {
-      console.error('Error checking for certificate:', error.message);
-      certStatus = false;
     }
 
     startServer = setInterval(() => {
@@ -132,8 +164,8 @@ module.exports = function createPlugin(app) {
           certStatus = false;
           clearInterval(startServer);
           const httpsSec = {
-            key: fs.readFileSync(path.join(__dirname, 'cert/tls.key')),
-            cert: fs.readFileSync(path.join(__dirname, 'cert/tls.cert'))
+            key: fs.readFileSync(certKeyPath),
+            cert: fs.readFileSync(certFilePath)
           };
           webServer = https.createServer(httpsSec, httpServerRequest);
           webServer.listen(port, () => {
