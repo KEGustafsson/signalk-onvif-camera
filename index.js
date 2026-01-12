@@ -100,42 +100,47 @@ module.exports = function createPlugin(app) {
     }];
     fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
 
-    // Use Signal K data directory for persistent certificate storage
-    const certDir = path.join(app.getDataDirPath(), 'cert');
-    const certKeyPath = path.join(certDir, 'tls.key');
-    const certFilePath = path.join(certDir, 'tls.cert');
-
-    // Check if certificate is expired or will expire within 7 days
-    function isCertificateExpired(certPath) {
-      try {
-        const certPem = fs.readFileSync(certPath, 'utf8');
-        const cert = new crypto.X509Certificate(certPem);
-        const expiryDate = new Date(cert.validTo);
-        const now = new Date();
-        const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-        return expiryDate <= sevenDaysFromNow;
-      } catch (error) {
-        app.debug(`Error checking certificate expiry: ${error.message}`);
-        return true; // If we can't read it, regenerate
-      }
-    }
-
-    // Generate new SSL certificate
-    function generateCertificate() {
-      fs.mkdirSync(certDir, { recursive: true });
-      const attrs = [{ name: 'commonName', value: 'localhost' }];
-      const pems = selfsigned.generate(attrs, {
-        days: 365,
-        keySize: 2048,
-        algorithm: 'sha256'
-      });
-      fs.writeFileSync(certKeyPath, pems.private);
-      fs.writeFileSync(certFilePath, pems.cert);
-      app.debug(`SSL certificates generated and stored in ${certDir}`);
-    }
+    // Certificate paths - only initialized when secure mode is enabled
+    let certDir;
+    let certKeyPath;
+    let certFilePath;
 
     if (secure) {
       try {
+        // Use Signal K data directory for persistent certificate storage
+        certDir = path.join(app.getDataDirPath(), 'cert');
+        certKeyPath = path.join(certDir, 'tls.key');
+        certFilePath = path.join(certDir, 'tls.cert');
+
+        // Check if certificate is expired or will expire within 7 days
+        function isCertificateExpired(certPath) {
+          try {
+            const certPem = fs.readFileSync(certPath, 'utf8');
+            const cert = new crypto.X509Certificate(certPem);
+            const expiryDate = new Date(cert.validTo);
+            const now = new Date();
+            const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            return expiryDate <= sevenDaysFromNow;
+          } catch (error) {
+            app.debug(`Error checking certificate expiry: ${error.message}`);
+            return true; // If we can't read it, regenerate
+          }
+        }
+
+        // Generate new SSL certificate
+        function generateCertificate() {
+          fs.mkdirSync(certDir, { recursive: true });
+          const attrs = [{ name: 'commonName', value: 'localhost' }];
+          const pems = selfsigned.generate(attrs, {
+            days: 365,
+            keySize: 2048,
+            algorithm: 'sha256'
+          });
+          fs.writeFileSync(certKeyPath, pems.private);
+          fs.writeFileSync(certFilePath, pems.cert);
+          app.debug(`SSL certificates generated and stored in ${certDir}`);
+        }
+
         const certExists = fs.existsSync(certFilePath) && fs.existsSync(certKeyPath);
 
         if (!certExists) {
@@ -151,10 +156,10 @@ module.exports = function createPlugin(app) {
           certStatus = true;
         }
       } catch (error) {
-        console.error('Failed to generate SSL certificate:', error.message);
-        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+        console.error('Failed to setup SSL certificate:', error.message);
+        setStatus('Certificate setup failed. Server cannot start in secure mode.');
         certStatus = false;
-        return; // Don't start server if certificate generation failed
+        return; // Don't start server if certificate setup failed
       }
     }
 
