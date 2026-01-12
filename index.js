@@ -526,7 +526,8 @@ module.exports = function createPlugin(app) {
       'Content-Type': `multipart/x-mixed-replace; boundary=${boundary}`,
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Pragma': 'no-cache'
+      'Pragma': 'no-cache',
+      'X-Accel-Buffering': 'no'
     });
 
     const streamId = `${address}-${Date.now()}`;
