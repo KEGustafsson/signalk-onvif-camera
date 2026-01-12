@@ -1,6 +1,6 @@
 {
   "name": "signalk-onvif-camera",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Signal K Onvif Camera Interface",
   "main": "index.js",
   "scripts": {
