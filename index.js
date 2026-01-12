@@ -32,6 +32,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const selfsigned = require('selfsigned');
 const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/validation');
 
@@ -104,32 +105,56 @@ module.exports = function createPlugin(app) {
     const certKeyPath = path.join(certDir, 'tls.key');
     const certFilePath = path.join(certDir, 'tls.cert');
 
-    if ((secure) && (!fs.existsSync(certDir))){
-      fs.mkdirSync(certDir, { recursive: true });
+    // Check if certificate is expired or will expire within 7 days
+    function isCertificateExpired(certPath) {
       try {
-        const attrs = [{ name: 'commonName', value: 'localhost' }];
-        const pems = selfsigned.generate(attrs, {
-          days: 365,
-          keySize: 2048,
-          algorithm: 'sha256'
-        });
-        fs.writeFileSync(certKeyPath, pems.private);
-        fs.writeFileSync(certFilePath, pems.cert);
-        certStatus = true;
-        app.debug(`SSL certificates generated and stored in ${certDir}`);
+        const certPem = fs.readFileSync(certPath, 'utf8');
+        const cert = new crypto.X509Certificate(certPem);
+        const expiryDate = new Date(cert.validTo);
+        const now = new Date();
+        const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        return expiryDate <= sevenDaysFromNow;
       } catch (error) {
-        console.error('Failed to generate SSL certificate:', error.message);
-        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+        app.debug(`Error checking certificate expiry: ${error.message}`);
+        return true; // If we can't read it, regenerate
       }
     }
 
-    try {
-      if (fs.existsSync(certKeyPath)) {
-        certStatus = true;
+    // Generate new SSL certificate
+    function generateCertificate() {
+      fs.mkdirSync(certDir, { recursive: true });
+      const attrs = [{ name: 'commonName', value: 'localhost' }];
+      const pems = selfsigned.generate(attrs, {
+        days: 365,
+        keySize: 2048,
+        algorithm: 'sha256'
+      });
+      fs.writeFileSync(certKeyPath, pems.private);
+      fs.writeFileSync(certFilePath, pems.cert);
+      app.debug(`SSL certificates generated and stored in ${certDir}`);
+    }
+
+    if (secure) {
+      try {
+        const certExists = fs.existsSync(certFilePath) && fs.existsSync(certKeyPath);
+
+        if (!certExists) {
+          app.debug('SSL certificates not found, generating new certificates...');
+          generateCertificate();
+          certStatus = true;
+        } else if (isCertificateExpired(certFilePath)) {
+          app.debug('SSL certificate expired or expiring soon, regenerating...');
+          generateCertificate();
+          certStatus = true;
+        } else {
+          app.debug('SSL certificates found and valid');
+          certStatus = true;
+        }
+      } catch (error) {
+        console.error('Failed to generate SSL certificate:', error.message);
+        setStatus('Certificate generation failed. Server cannot start in secure mode.');
+        certStatus = false;
       }
-    } catch (error) {
-      console.error('Error checking for certificate:', error.message);
-      certStatus = false;
     }
 
     startServer = setInterval(() => {
