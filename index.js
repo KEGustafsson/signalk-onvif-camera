@@ -154,6 +154,7 @@ module.exports = function createPlugin(app) {
         console.error('Failed to generate SSL certificate:', error.message);
         setStatus('Certificate generation failed. Server cannot start in secure mode.');
         certStatus = false;
+        return; // Don't start server if certificate generation failed
       }
     }
 
