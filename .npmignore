@@ -3,3 +3,11 @@ public_src
 webpack.config.js
 node_modules
 .github
+test
+jest.config.js
+.claude
+.gitignore
+vitest.config.js
+.eslintrc.js
+.prettierignore
+.editorconfig
