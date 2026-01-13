@@ -112,7 +112,7 @@
     this.el['btn_streams'].on('click', this.showStreamsModal.bind(this));
 
     // Copy URL button handlers
-    $('.copy-url-btn').on('click', function() {
+    $('.copy-url-btn').on('click', function () {
       const target = $(this).data('target');
       const input = $(target);
       input.select();
@@ -253,7 +253,7 @@
     // Get list of existing device addresses in the dropdown (exclude placeholders)
     const existingAddresses = {};
     const placeholders = ['Select a device', 'now searching...'];
-    this.el['sel_dev'].find('option').each(function() {
+    this.el['sel_dev'].find('option').each(function () {
       const val = $(this).val();
       const text = $(this).text();
       // Only count real device entries (has IP-like value)
@@ -359,7 +359,7 @@
       // Stop any existing stream first
       this.el['img_snp'].attr('src', '');
       // Small delay to ensure browser closes old connection
-      setTimeout(function() {
+      setTimeout(function () {
         // Add timestamp to prevent caching
         this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
       }.bind(this), 50);
@@ -372,8 +372,6 @@
   };
 
   OnvifManager.prototype.showStreamsModal = function () {
-    const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
-
     // Set stream URLs in the modal
     if (this.streams) {
       this.el['mdl_str'].find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');

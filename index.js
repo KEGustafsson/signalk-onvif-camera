@@ -60,7 +60,7 @@ module.exports = function createPlugin(app) {
   let discoverOnStart;
   let startupDiscoveryDelay;
   let cameraConfigs = {};
-  let mjpegStreams = new Map(); // Track active MJPEG streams
+  const mjpegStreams = new Map(); // Track active MJPEG streams
 
   plugin.start = function (options, _restartPlugin) {
     userName = options.userName;
@@ -113,7 +113,7 @@ module.exports = function createPlugin(app) {
         certFilePath = path.join(certDir, 'tls.cert');
 
         // Check if certificate is expired or will expire within 7 days
-        function isCertificateExpired(certPath) {
+        const isCertificateExpired = function (certPath) {
           try {
             const certPem = fs.readFileSync(certPath, 'utf8');
             const cert = new crypto.X509Certificate(certPem);
@@ -125,10 +125,10 @@ module.exports = function createPlugin(app) {
             app.debug(`Error checking certificate expiry: ${error.message}`);
             return true; // If we can't read it, regenerate
           }
-        }
+        };
 
         // Generate new SSL certificate
-        function generateCertificate() {
+        const generateCertificate = function () {
           fs.mkdirSync(certDir, { recursive: true });
           const attrs = [{ name: 'commonName', value: 'localhost' }];
           const pems = selfsigned.generate(attrs, {
@@ -139,7 +139,7 @@ module.exports = function createPlugin(app) {
           fs.writeFileSync(certKeyPath, pems.private);
           fs.writeFileSync(certFilePath, pems.cert);
           app.debug(`SSL certificates generated and stored in ${certDir}`);
-        }
+        };
 
         const certExists = fs.existsSync(certFilePath) && fs.existsSync(certKeyPath);
 
@@ -338,7 +338,7 @@ module.exports = function createPlugin(app) {
       startupDiscoveryTimer = null;
     }
     // Clean up MJPEG streams
-    mjpegStreams.forEach((stream, key) => {
+    mjpegStreams.forEach((stream, _key) => {
       if (stream.timer) {
         clearInterval(stream.timer);
       }
@@ -945,7 +945,8 @@ module.exports = function createPlugin(app) {
     if (newProfile) {
       app.debug(`Profile changed successfully. New profile: ${newProfile.name}, token: ${newProfile.token}`);
       app.debug(`Snapshot URL: ${newProfile.snapshot}`);
-      app.debug(`Video resolution: ${newProfile.video?.encoder?.resolution?.width}x${newProfile.video?.encoder?.resolution?.height}`);
+      const videoRes = newProfile.video && newProfile.video.encoder && newProfile.video.encoder.resolution;
+      app.debug(`Video resolution: ${videoRes ? videoRes.width : 'unknown'}x${videoRes ? videoRes.height : 'unknown'}`);
 
       const res = {
         id: 'changeProfile',
@@ -1277,7 +1278,7 @@ function gracefulShutdown(signal) {
   if (shutdownInProgress) return;
   shutdownInProgress = true;
 
-  app.debug(`\n${signal} received. Shutting down gracefully...`);
+  console.log(`\n${signal} received. Shutting down gracefully...`);
 
   // Stop all plugin instances
   if (global.__onvifPluginInstances) {
@@ -1294,7 +1295,7 @@ function gracefulShutdown(signal) {
 
   // Give servers time to close gracefully
   setTimeout(() => {
-    app.debug('Shutdown complete');
+    console.log('Shutdown complete');
     process.exit(0);
   }, 1000);
 }
