@@ -88,7 +88,10 @@
 
   OnvifManager.prototype.init = function () {
     this.initWebSocketConnection();
-    $(window).on('resize', this.adjustSize.bind(this));
+    // Use requestAnimationFrame for resize to avoid forced layout
+    $(window).on('resize', function () {
+      window.requestAnimationFrame(this.adjustSize.bind(this));
+    }.bind(this));
     this.el['btn_con'].on('click', this.pressedConnectButton.bind(this));
     this.el['btn_dcn'].on('click', this.pressedConnectButton.bind(this));
     $(document.body).on('keydown', this.ptzMove.bind(this));
@@ -423,7 +426,8 @@
           if (imgEl) {
             this.snapshot_w = imgEl.naturalWidth || 400;
             this.snapshot_h = imgEl.naturalHeight || 300;
-            this.adjustSize();
+            // Use requestAnimationFrame to avoid forced layout
+            window.requestAnimationFrame(this.adjustSize.bind(this));
           }
           // Only continue fetching if connected and in snapshot mode
           if (this.device_connected === true && this.stream_mode === 'snapshot') {
