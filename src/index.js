@@ -34,9 +34,16 @@
     rawFile.overrideMimeType('application/json');
     rawFile.open('GET', file, true);
     rawFile.onreadystatechange = function () {
-      if (rawFile.readyState === 4 && rawFile.status == '200') {
-        callback(rawFile.responseText);
+      if (rawFile.readyState === 4) {
+        if (rawFile.status === 200) {
+          callback(rawFile.responseText);
+        } else {
+          console.error('Failed to load ' + file + ', status: ' + rawFile.status);
+        }
       }
+    };
+    rawFile.onerror = function () {
+      console.error('Error loading ' + file);
     };
     rawFile.send(null);
   }
@@ -81,7 +88,10 @@
 
   OnvifManager.prototype.init = function () {
     this.initWebSocketConnection();
-    $(window).on('resize', this.adjustSize.bind(this));
+    // Use requestAnimationFrame for resize to avoid forced layout
+    $(window).on('resize', function () {
+      window.requestAnimationFrame(this.adjustSize.bind(this));
+    }.bind(this));
     this.el['btn_con'].on('click', this.pressedConnectButton.bind(this));
     this.el['btn_dcn'].on('click', this.pressedConnectButton.bind(this));
     $(document.body).on('keydown', this.ptzMove.bind(this));
@@ -112,7 +122,7 @@
     this.el['btn_streams'].on('click', this.showStreamsModal.bind(this));
 
     // Copy URL button handlers
-    $('.copy-url-btn').on('click', function() {
+    $('.copy-url-btn').on('click', function () {
       const target = $(this).data('target');
       const input = $(target);
       input.select();
@@ -132,6 +142,7 @@
     const snapshot_aspect_ratio = this.snapshot_w / this.snapshot_h;
     const img_dom_el = this.el['img_snp'].get(0);
 
+    let img_w, img_h;
     if (snapshot_aspect_ratio > aspect_ratio) {
       img_w = w;
       img_h = w / snapshot_aspect_ratio;
@@ -253,7 +264,7 @@
     // Get list of existing device addresses in the dropdown (exclude placeholders)
     const existingAddresses = {};
     const placeholders = ['Select a device', 'now searching...'];
-    this.el['sel_dev'].find('option').each(function() {
+    this.el['sel_dev'].find('option').each(function () {
       const val = $(this).val();
       const text = $(this).text();
       // Only count real device entries (has IP-like value)
@@ -359,7 +370,7 @@
       // Stop any existing stream first
       this.el['img_snp'].attr('src', '');
       // Small delay to ensure browser closes old connection
-      setTimeout(function() {
+      setTimeout(function () {
         // Add timestamp to prevent caching
         this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
       }.bind(this), 50);
@@ -372,8 +383,6 @@
   };
 
   OnvifManager.prototype.showStreamsModal = function () {
-    const baseUrl = httpScheme + '://' + location.hostname + ':' + port;
-
     // Set stream URLs in the modal
     if (this.streams) {
       this.el['mdl_str'].find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');
@@ -413,9 +422,13 @@
       }
       window.setTimeout(
         function () {
-          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth || 400;
-          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight || 300;
-          this.adjustSize();
+          const imgEl = this.el['img_snp'].get(0);
+          if (imgEl) {
+            this.snapshot_w = imgEl.naturalWidth || 400;
+            this.snapshot_h = imgEl.naturalHeight || 300;
+            // Use requestAnimationFrame to avoid forced layout
+            window.requestAnimationFrame(this.adjustSize.bind(this));
+          }
           // Only continue fetching if connected and in snapshot mode
           if (this.device_connected === true && this.stream_mode === 'snapshot') {
             this.fetchSnapshot();
