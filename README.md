@@ -68,6 +68,7 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 - v0.6.1, extra console logs removed
 - v0.7.0, certs stored to permanent location
 - v0.7.1, fix WebSocket connection issues
+- v0.8.0, webpack changed to vite
 
 ## Credits
 https://github.com/futomi/node-onvif 
