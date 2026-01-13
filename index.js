@@ -696,6 +696,8 @@ module.exports = function createPlugin(app) {
       return 'text/css';
     } else if (ext === 'js') {
       return 'text/javascript';
+    } else if (ext === 'json') {
+      return 'application/json';
     } else if (ext === 'woff2') {
       return 'application/font-woff';
     } else if (ext === 'woff') {

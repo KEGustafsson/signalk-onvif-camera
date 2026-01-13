@@ -34,9 +34,16 @@
     rawFile.overrideMimeType('application/json');
     rawFile.open('GET', file, true);
     rawFile.onreadystatechange = function () {
-      if (rawFile.readyState === 4 && rawFile.status == '200') {
-        callback(rawFile.responseText);
+      if (rawFile.readyState === 4) {
+        if (rawFile.status === 200) {
+          callback(rawFile.responseText);
+        } else {
+          console.error('Failed to load ' + file + ', status: ' + rawFile.status);
+        }
       }
+    };
+    rawFile.onerror = function () {
+      console.error('Error loading ' + file);
     };
     rawFile.send(null);
   }
@@ -398,12 +405,14 @@
   };
 
   OnvifManager.prototype.fetchSnapshot = function () {
+    console.log('Fetching snapshot for:', this.selected_address);
     this.sendRequest('fetchSnapshot', {
       address: this.selected_address
     });
   };
 
   OnvifManager.prototype.fetchSnapshotCallback = function (data) {
+    console.log('fetchSnapshotCallback called, mode:', this.stream_mode, 'connected:', this.device_connected, 'interval:', snapshotInterval);
     if (data.result) {
       // Only update image if in snapshot mode (not MJPEG)
       if (this.stream_mode === 'snapshot') {
@@ -411,12 +420,19 @@
       }
       window.setTimeout(
         function () {
-          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth || 400;
-          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight || 300;
-          this.adjustSize();
+          console.log('setTimeout callback executing, mode:', this.stream_mode, 'connected:', this.device_connected);
+          const imgEl = this.el['img_snp'].get(0);
+          if (imgEl) {
+            this.snapshot_w = imgEl.naturalWidth || 400;
+            this.snapshot_h = imgEl.naturalHeight || 300;
+            this.adjustSize();
+          }
           // Only continue fetching if connected and in snapshot mode
           if (this.device_connected === true && this.stream_mode === 'snapshot') {
+            console.log('Conditions met, fetching next snapshot');
             this.fetchSnapshot();
+          } else {
+            console.log('Conditions not met, stopping refresh');
           }
         }.bind(this),
         snapshotInterval
