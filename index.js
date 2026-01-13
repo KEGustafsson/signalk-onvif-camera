@@ -490,7 +490,7 @@ module.exports = function createPlugin(app) {
     if (reqPath === '/') {
       reqPath = '/index.html';
     }
-    const fpath = '.' + reqPath;
+    const fpath = './public' + reqPath;
     fs.readFile(fpath, 'utf-8', function (err, data) {
       if (err) {
         httpServerResponse404(req.url, res);
