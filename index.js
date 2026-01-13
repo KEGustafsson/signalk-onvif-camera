@@ -490,7 +490,7 @@ module.exports = function createPlugin(app) {
     if (reqPath === '/') {
       reqPath = '/index.html';
     }
-    const fpath = '.' + reqPath;
+    const fpath = './public' + reqPath;
     fs.readFile(fpath, 'utf-8', function (err, data) {
       if (err) {
         httpServerResponse404(req.url, res);
@@ -696,6 +696,8 @@ module.exports = function createPlugin(app) {
       return 'text/css';
     } else if (ext === 'js') {
       return 'text/javascript';
+    } else if (ext === 'json') {
+      return 'application/json';
     } else if (ext === 'woff2') {
       return 'application/font-woff';
     } else if (ext === 'woff') {

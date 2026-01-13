@@ -34,9 +34,16 @@
     rawFile.overrideMimeType('application/json');
     rawFile.open('GET', file, true);
     rawFile.onreadystatechange = function () {
-      if (rawFile.readyState === 4 && rawFile.status == '200') {
-        callback(rawFile.responseText);
+      if (rawFile.readyState === 4) {
+        if (rawFile.status === 200) {
+          callback(rawFile.responseText);
+        } else {
+          console.error('Failed to load ' + file + ', status: ' + rawFile.status);
+        }
       }
+    };
+    rawFile.onerror = function () {
+      console.error('Error loading ' + file);
     };
     rawFile.send(null);
   }
@@ -81,7 +88,10 @@
 
   OnvifManager.prototype.init = function () {
     this.initWebSocketConnection();
-    $(window).on('resize', this.adjustSize.bind(this));
+    // Use requestAnimationFrame for resize to avoid forced layout
+    $(window).on('resize', function () {
+      window.requestAnimationFrame(this.adjustSize.bind(this));
+    }.bind(this));
     this.el['btn_con'].on('click', this.pressedConnectButton.bind(this));
     this.el['btn_dcn'].on('click', this.pressedConnectButton.bind(this));
     $(document.body).on('keydown', this.ptzMove.bind(this));
@@ -132,6 +142,7 @@
     const snapshot_aspect_ratio = this.snapshot_w / this.snapshot_h;
     const img_dom_el = this.el['img_snp'].get(0);
 
+    let img_w, img_h;
     if (snapshot_aspect_ratio > aspect_ratio) {
       img_w = w;
       img_h = w / snapshot_aspect_ratio;
@@ -411,9 +422,13 @@
       }
       window.setTimeout(
         function () {
-          this.snapshot_w = this.el['img_snp'].get(0).naturalWidth || 400;
-          this.snapshot_h = this.el['img_snp'].get(0).naturalHeight || 300;
-          this.adjustSize();
+          const imgEl = this.el['img_snp'].get(0);
+          if (imgEl) {
+            this.snapshot_w = imgEl.naturalWidth || 400;
+            this.snapshot_h = imgEl.naturalHeight || 300;
+            // Use requestAnimationFrame to avoid forced layout
+            window.requestAnimationFrame(this.adjustSize.bind(this));
+          }
           // Only continue fetching if connected and in snapshot mode
           if (this.device_connected === true && this.stream_mode === 'snapshot') {
             this.fetchSnapshot();
