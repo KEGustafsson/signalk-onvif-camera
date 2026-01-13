@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepublish": "npm run build",
-    "build": "webpack --config webpack.config.js --mode=production"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "signalk": {
     "appIcon": "./icons/icon-72x72.png",
@@ -29,11 +31,8 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
-    "copy-webpack-plugin": "^13.0.0",
     "eslint": "^8.57.0",
-    "html-webpack-plugin": "^5.5.0",
     "jest": "^29.7.0",
-    "webpack": "^5.67.0",
-    "webpack-cli": "^6.0.1"
+    "vite": "^6.0.5"
   }
 }
