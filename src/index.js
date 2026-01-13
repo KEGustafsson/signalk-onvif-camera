@@ -139,6 +139,7 @@
     const snapshot_aspect_ratio = this.snapshot_w / this.snapshot_h;
     const img_dom_el = this.el['img_snp'].get(0);
 
+    let img_w, img_h;
     if (snapshot_aspect_ratio > aspect_ratio) {
       img_w = w;
       img_h = w / snapshot_aspect_ratio;
