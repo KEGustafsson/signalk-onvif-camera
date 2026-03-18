@@ -69,13 +69,13 @@
   OnvifManager.prototype.init = function () {
     this.initWebSocketConnection();
     // Use requestAnimationFrame for resize to avoid forced layout
-    $(window).on('resize', function () {
+    $(window).off('resize.onvif').on('resize.onvif', function () {
       window.requestAnimationFrame(this.adjustSize.bind(this));
     }.bind(this));
     this.el['btn_con'].on('click', this.pressedConnectButton.bind(this));
     this.el['btn_dcn'].on('click', this.pressedConnectButton.bind(this));
-    $(document.body).on('keydown', this.ptzMove.bind(this));
-    $(document.body).on('keyup', this.ptzStop.bind(this));
+    $(document.body).off('keydown.onvif').on('keydown.onvif', this.ptzMove.bind(this));
+    $(document.body).off('keyup.onvif').on('keyup.onvif', this.ptzStop.bind(this));
     this.el['btn_hme'].on('click', this.ptzGotoHome.bind(this));
     this.el['btn_hme'].on('touchstart', this.ptzGotoHome.bind(this));
     this.el['btn_hme'].on('touchend', this.ptzGotoHome.bind(this));
@@ -104,9 +104,13 @@
     // Copy URL button handlers
     $('.copy-url-btn').on('click', function () {
       const target = $(this).data('target');
-      const input = $(target);
-      input.select();
-      document.execCommand('copy');
+      const text = $(target).val();
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      } else {
+        $(target).select();
+        document.execCommand('copy'); // fallback for older browsers
+      }
     });
   };
 
@@ -501,10 +505,10 @@
         let cx = event.clientX;
         let cy = event.clientY;
         if (event.type === 'touchstart') {
-          if (event.targetTouches[0]) {
+          if (event.targetTouches && event.targetTouches.length > 0) {
             cx = event.targetTouches[0].clientX;
             cy = event.targetTouches[0].clientY;
-          } else if (event.changedTouches[0]) {
+          } else if (event.changedTouches && event.changedTouches.length > 0) {
             cx = event.changedTouches[0].clientX;
             cy = event.changedTouches[0].clientY;
           }
