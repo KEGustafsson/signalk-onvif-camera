@@ -7,7 +7,6 @@ const config = require('../lib/config/defaults');
 describe('Configuration defaults', () => {
   test('should have server configuration', () => {
     expect(config.server).toBeDefined();
-    expect(config.server.defaultPort).toBe(8880);
     expect(config.server.maxConnections).toBeGreaterThan(0);
   });
 
@@ -44,10 +43,11 @@ describe('Configuration defaults', () => {
     expect(config.websocket.pongTimeout).toBeGreaterThan(0);
   });
 
-  test('should have certificate configuration', () => {
-    expect(config.certificate).toBeDefined();
-    expect(config.certificate.path).toBeDefined();
-    expect(config.certificate.checkInterval).toBeGreaterThan(0);
-    expect(config.certificate.maxRetries).toBeGreaterThan(0);
+  test('should not have defaultPort (plugin uses SignalK server port)', () => {
+    expect(config.server.defaultPort).toBeUndefined();
+  });
+
+  test('should not have certificate config (plugin no longer manages TLS)', () => {
+    expect(config.certificate).toBeUndefined();
   });
 });

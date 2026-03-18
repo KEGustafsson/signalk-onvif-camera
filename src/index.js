@@ -1,33 +1,13 @@
 (function () {
-  let scheme;
-  let httpScheme;
-  let port;
   let snapshotInterval = 100;
 
   readTextFile('browserdata.json', function (text){
     const browserData = JSON.parse(text);
-    port = browserData[0].port;
     snapshotInterval = browserData[0].snapshotInterval || 100;
-    if (browserData[0].secure) {
-      scheme = 'wss';
-      httpScheme = 'https';
-    } else {
-      scheme = 'ws';
-      httpScheme = 'http';
-    }
+    $(document).ready(function () {
+      new OnvifManager().init();
+    });
   });
-
-  waitForElement();
-
-  function waitForElement(){
-    if(typeof port !== 'undefined'){
-      $(document).ready(function () {
-        new OnvifManager().init();
-      });
-    } else {
-      setTimeout(waitForElement, 250);
-    }
-  }
 
   function readTextFile(file, callback) {
     const rawFile = new XMLHttpRequest();
@@ -89,13 +69,13 @@
   OnvifManager.prototype.init = function () {
     this.initWebSocketConnection();
     // Use requestAnimationFrame for resize to avoid forced layout
-    $(window).on('resize', function () {
+    $(window).off('resize.onvif').on('resize.onvif', function () {
       window.requestAnimationFrame(this.adjustSize.bind(this));
     }.bind(this));
     this.el['btn_con'].on('click', this.pressedConnectButton.bind(this));
     this.el['btn_dcn'].on('click', this.pressedConnectButton.bind(this));
-    $(document.body).on('keydown', this.ptzMove.bind(this));
-    $(document.body).on('keyup', this.ptzStop.bind(this));
+    $(document.body).off('keydown.onvif').on('keydown.onvif', this.ptzMove.bind(this));
+    $(document.body).off('keyup.onvif').on('keyup.onvif', this.ptzStop.bind(this));
     this.el['btn_hme'].on('click', this.ptzGotoHome.bind(this));
     this.el['btn_hme'].on('touchstart', this.ptzGotoHome.bind(this));
     this.el['btn_hme'].on('touchend', this.ptzGotoHome.bind(this));
@@ -124,9 +104,13 @@
     // Copy URL button handlers
     $('.copy-url-btn').on('click', function () {
       const target = $(this).data('target');
-      const input = $(target);
-      input.select();
-      document.execCommand('copy');
+      const text = $(target).val();
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).catch(function () {});
+      } else {
+        $(target).select();
+        document.execCommand('copy'); // fallback for older browsers
+      }
     });
   };
 
@@ -161,23 +145,24 @@
   };
 
   OnvifManager.prototype.initWebSocketConnection = function () {
-    const url = scheme + '://' + location.hostname + ':' + port;
+    const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = wsScheme + '://' + location.host + '/plugins/signalk-onvif-camera/ws';
     this.ws = new WebSocket(url);
     this.ws.onopen = function () {
-      console.log('WebSocket connection established.');
+      console.debug('WebSocket connection established.');
       this.sendRequest('startDiscovery');
     }.bind(this);
     this.ws.onclose = function (_event) {
-      console.log('WebSocket connection closed.');
+      console.debug('WebSocket connection closed.');
       this.showMessageModal(
         'Error',
-        'The WebSocket connection was closed. Check if the server.js is running.'
+        'The WebSocket connection was closed. Check if the SignalK server and the ONVIF Camera plugin are running.'
       );
     }.bind(this);
     this.ws.onerror = function (_error) {
       this.showMessageModal(
         'Error',
-        'Failed to establish a WebSocket connection. Check if the server.js is running.'
+        'Failed to establish a WebSocket connection. Check if the SignalK server and the ONVIF Camera plugin are running.'
       );
     }.bind(this);
     this.ws.onmessage = function (res) {
@@ -320,10 +305,12 @@
         this.streams = data.result.streams;
       }
       if (data.result.mjpegUrl) {
-        this.mjpegUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.mjpegUrl;
+        // Use location.origin so the MJPEG request goes through whatever
+        // reverse proxy the browser is already using (same host/port/scheme).
+        this.mjpegUrl = location.origin + data.result.mjpegUrl;
       }
       if (data.result.snapshotUrl) {
-        this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
+        this.snapshotUrl = location.origin + data.result.snapshotUrl;
       }
 
       this.showConnectedDeviceInfo(this.selected_address, data.result);
@@ -367,10 +354,17 @@
 
   OnvifManager.prototype.startMjpegStream = function () {
     if (this.mjpegUrl) {
+      // Cancel any pending start to prevent multiple simultaneous connections
+      // when the user toggles the stream mode rapidly.
+      if (this._mjpegStartTimer) {
+        clearTimeout(this._mjpegStartTimer);
+        this._mjpegStartTimer = null;
+      }
       // Stop any existing stream first
       this.el['img_snp'].attr('src', '');
       // Small delay to ensure browser closes old connection
-      setTimeout(function () {
+      this._mjpegStartTimer = setTimeout(function () {
+        this._mjpegStartTimer = null;
         // Add timestamp to prevent caching
         this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
       }.bind(this), 50);
@@ -378,6 +372,11 @@
   };
 
   OnvifManager.prototype.stopMjpegStream = function () {
+    // Cancel any pending stream start
+    if (this._mjpegStartTimer) {
+      clearTimeout(this._mjpegStartTimer);
+      this._mjpegStartTimer = null;
+    }
     // Remove the src to stop the MJPEG stream
     this.el['img_snp'].attr('src', '');
   };
@@ -437,7 +436,7 @@
         snapshotInterval
       );
     } else if (data.error) {
-      console.log(data.error);
+      console.error(data.error);
       // Retry after error with a longer delay
       if (this.device_connected === true && this.stream_mode === 'snapshot') {
         window.setTimeout(this.fetchSnapshot.bind(this), 1000);
@@ -506,10 +505,10 @@
         let cx = event.clientX;
         let cy = event.clientY;
         if (event.type === 'touchstart') {
-          if (event.targetTouches[0]) {
+          if (event.targetTouches && event.targetTouches.length > 0) {
             cx = event.targetTouches[0].clientX;
             cy = event.targetTouches[0].clientY;
-          } else if (event.changedTouches[0]) {
+          } else if (event.changedTouches && event.changedTouches.length > 0) {
             cx = event.changedTouches[0].clientX;
             cy = event.changedTouches[0].clientY;
           }
