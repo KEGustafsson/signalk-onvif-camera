@@ -100,6 +100,15 @@ module.exports = function createPlugin(app) {
     }];
     fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
 
+    // Register MJPEG endpoint on SignalK's Express app so it is reachable
+    // through the same reverse proxy as the SignalK server itself.
+    if (typeof app.get === 'function') {
+      app.get('/plugins/signalk-onvif-camera/mjpeg', (req, res) => {
+        const query = require('url').parse(req.url, true).query;
+        handleMjpegStream(req, res, query);
+      });
+    }
+
     // Certificate paths - only initialized when secure mode is enabled
     let certDir;
     let certKeyPath;
@@ -529,10 +538,17 @@ module.exports = function createPlugin(app) {
     const boundary = 'mjpegboundary';
     res.writeHead(200, {
       'Content-Type': `multipart/x-mixed-replace; boundary=${boundary}`,
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
       'Connection': 'keep-alive',
-      'Pragma': 'no-cache'
+      'Pragma': 'no-cache',
+      'X-Accel-Buffering': 'no'
     });
+    // Flush headers immediately so proxies and browsers start receiving the stream
+    res.flushHeaders();
+    // Disable Nagle algorithm to ensure frames are sent without delay
+    if (res.socket) {
+      res.socket.setNoDelay(true);
+    }
 
     const streamId = `${address}-${Date.now()}`;
     let isActive = true;
@@ -869,7 +885,7 @@ module.exports = function createPlugin(app) {
         res['result'] = {
           ...result,
           streams: currentProfile ? currentProfile.stream : null,
-          mjpegUrl: `/mjpeg?address=${encodeURIComponent(params.address)}`,
+          mjpegUrl: `/plugins/signalk-onvif-camera/mjpeg?address=${encodeURIComponent(params.address)}`,
           snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}`
         };
 

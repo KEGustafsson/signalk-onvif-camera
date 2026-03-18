@@ -320,7 +320,9 @@
         this.streams = data.result.streams;
       }
       if (data.result.mjpegUrl) {
-        this.mjpegUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.mjpegUrl;
+        // Use location.origin so the MJPEG request goes through whatever
+        // reverse proxy the browser is already using (same host/port/scheme).
+        this.mjpegUrl = location.origin + data.result.mjpegUrl;
       }
       if (data.result.snapshotUrl) {
         this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
