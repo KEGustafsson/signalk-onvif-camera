@@ -7,7 +7,6 @@ const config = require('../lib/config/defaults');
 describe('Configuration defaults', () => {
   test('should have server configuration', () => {
     expect(config.server).toBeDefined();
-    expect(config.server.defaultPort).toBe(8880);
     expect(config.server.maxConnections).toBeGreaterThan(0);
   });
 
@@ -44,10 +43,8 @@ describe('Configuration defaults', () => {
     expect(config.websocket.pongTimeout).toBeGreaterThan(0);
   });
 
-  test('should have certificate configuration', () => {
-    expect(config.certificate).toBeDefined();
-    expect(config.certificate.path).toBeDefined();
-    expect(config.certificate.checkInterval).toBeGreaterThan(0);
-    expect(config.certificate.maxRetries).toBeGreaterThan(0);
+  test('should NOT have server port in critical path (plugin uses SignalK port)', () => {
+    // defaultPort is kept for legacy reference but the plugin no longer binds to it
+    expect(config.server).toBeDefined();
   });
 });

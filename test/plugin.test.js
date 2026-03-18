@@ -1,47 +1,78 @@
 /**
- * Basic smoke tests for signalk-onvif-camera plugin
+ * Tests for signalk-onvif-camera plugin
  */
+
+const EventEmitter = require('events');
 
 describe('signalk-onvif-camera plugin', () => {
   let plugin;
   let mockApp;
+  let mockServer;
 
   beforeEach(() => {
-    // Mock Signal K app
+    jest.resetModules();
+
+    // Minimal http.Server-like emitter so WebSocket.Server can attach
+    mockServer = new EventEmitter();
+    mockServer.on = jest.fn(mockServer.on.bind(mockServer));
+
     mockApp = {
       setPluginStatus: jest.fn(),
-      setProviderStatus: jest.fn()
+      setProviderStatus: jest.fn(),
+      debug: jest.fn(),
+      handleMessage: jest.fn(),
+      get: jest.fn(),
+      server: mockServer,
+      getDataDirPath: jest.fn(() => '/tmp/test-signalk')
     };
 
-    // Require the plugin
     const createPlugin = require('../index.js');
     plugin = createPlugin(mockApp);
   });
 
-  test('should export a valid plugin object', () => {
-    expect(plugin).toBeDefined();
-    expect(plugin.id).toBe('signalk-onvif-camera');
-    expect(plugin.name).toBe('Signal K Onvif Camera Interface');
-    expect(typeof plugin.start).toBe('function');
-    expect(typeof plugin.stop).toBe('function');
+  afterEach(() => {
+    if (plugin && typeof plugin.stop === 'function') {
+      try { plugin.stop(); } catch (_) {}
+    }
   });
 
-  test('should have valid schema', () => {
-    expect(plugin.schema).toBeDefined();
-    expect(plugin.schema.type).toBe('object');
-    expect(plugin.schema.properties).toBeDefined();
-    expect(plugin.schema.properties.port).toBeDefined();
-    expect(plugin.schema.properties.secure).toBeDefined();
+  // ── basic structure ─────────────────────────────────────────────────────────
+
+  describe('plugin structure', () => {
+    test('should export a valid plugin object', () => {
+      expect(plugin).toBeDefined();
+      expect(plugin.id).toBe('signalk-onvif-camera');
+      expect(plugin.name).toBe('Signal K Onvif Camera Interface');
+      expect(typeof plugin.start).toBe('function');
+      expect(typeof plugin.stop).toBe('function');
+    });
+
+    test('should have valid uiSchema', () => {
+      expect(plugin.uiSchema).toBeDefined();
+      expect(plugin.uiSchema.password['ui:widget']).toBe('password');
+      expect(plugin.uiSchema.cameras.items.password['ui:widget']).toBe('password');
+    });
   });
 
-  test('should have valid uiSchema', () => {
-    expect(plugin.uiSchema).toBeDefined();
-    expect(plugin.uiSchema.password).toBeDefined();
-    expect(plugin.uiSchema.password['ui:widget']).toBe('password');
-  });
+  // ── schema ──────────────────────────────────────────────────────────────────
 
-  // New feature tests
-  describe('new streaming features schema', () => {
+  describe('plugin schema', () => {
+    test('should have valid schema object', () => {
+      expect(plugin.schema).toBeDefined();
+      expect(plugin.schema.type).toBe('object');
+      expect(plugin.schema.properties).toBeDefined();
+    });
+
+    test('should NOT have removed port/secure properties', () => {
+      expect(plugin.schema.properties.port).toBeUndefined();
+      expect(plugin.schema.properties.secure).toBeUndefined();
+    });
+
+    test('should have ipAddress property', () => {
+      expect(plugin.schema.properties.ipAddress).toBeDefined();
+      expect(plugin.schema.properties.ipAddress.type).toBe('string');
+    });
+
     test('should have autoDiscoveryInterval property', () => {
       expect(plugin.schema.properties.autoDiscoveryInterval).toBeDefined();
       expect(plugin.schema.properties.autoDiscoveryInterval.type).toBe('number');
@@ -61,37 +92,132 @@ describe('signalk-onvif-camera plugin', () => {
       expect(plugin.schema.properties.enableSignalKIntegration.default).toBe(false);
     });
 
-    test('should have cameras array with nickname property', () => {
-      expect(plugin.schema.properties.cameras).toBeDefined();
-      expect(plugin.schema.properties.cameras.type).toBe('array');
-      expect(plugin.schema.properties.cameras.items.properties.nickname).toBeDefined();
-      expect(plugin.schema.properties.cameras.items.properties.nickname.type).toBe('string');
-    });
-
-    test('should have per-camera credentials properties', () => {
-      const cameraProps = plugin.schema.properties.cameras.items.properties;
-      expect(cameraProps.userName).toBeDefined();
-      expect(cameraProps.password).toBeDefined();
-    });
-
-    test('should have camera-specific password hidden in uiSchema', () => {
-      expect(plugin.uiSchema.cameras).toBeDefined();
-      expect(plugin.uiSchema.cameras.items.password['ui:widget']).toBe('password');
-    });
-
-    test('should have discoverOnStart property', () => {
-      const props = plugin.schema.properties;
-      expect(props.discoverOnStart).toBeDefined();
-      expect(props.discoverOnStart.type).toBe('boolean');
-      expect(props.discoverOnStart.default).toBe(true);
+    test('should have discoverOnStart property defaulting to true', () => {
+      expect(plugin.schema.properties.discoverOnStart).toBeDefined();
+      expect(plugin.schema.properties.discoverOnStart.type).toBe('boolean');
+      expect(plugin.schema.properties.discoverOnStart.default).toBe(true);
     });
 
     test('should have startupDiscoveryDelay property', () => {
-      const props = plugin.schema.properties;
-      expect(props.startupDiscoveryDelay).toBeDefined();
-      expect(props.startupDiscoveryDelay.type).toBe('number');
-      expect(props.startupDiscoveryDelay.default).toBe(5);
-      expect(props.startupDiscoveryDelay.minimum).toBe(1);
+      expect(plugin.schema.properties.startupDiscoveryDelay).toBeDefined();
+      expect(plugin.schema.properties.startupDiscoveryDelay.type).toBe('number');
+      expect(plugin.schema.properties.startupDiscoveryDelay.default).toBe(5);
+      expect(plugin.schema.properties.startupDiscoveryDelay.minimum).toBe(1);
+    });
+
+    test('should have cameras array with all expected item properties', () => {
+      const cameras = plugin.schema.properties.cameras;
+      expect(cameras).toBeDefined();
+      expect(cameras.type).toBe('array');
+      const props = cameras.items.properties;
+      expect(props.address.type).toBe('string');
+      expect(props.name.type).toBe('string');
+      expect(props.nickname.type).toBe('string');
+      expect(props.userName.type).toBe('string');
+      expect(props.password.type).toBe('string');
+    });
+  });
+
+  // ── plugin.start() ──────────────────────────────────────────────────────────
+
+  describe('plugin.start()', () => {
+    const baseOptions = {
+      snapshotInterval: 150,
+      autoDiscoveryInterval: 0,
+      discoverOnStart: false
+    };
+
+    test('should register HTTP routes on app.get exactly once', () => {
+      plugin.start(baseOptions);
+      const routeCount = mockApp.get.mock.calls.length;
+      expect(routeCount).toBeGreaterThanOrEqual(4);
+
+      const paths = mockApp.get.mock.calls.map(c => c[0]);
+      expect(paths).toContain('/plugins/signalk-onvif-camera/mjpeg');
+      expect(paths).toContain('/plugins/signalk-onvif-camera/snapshot');
+      expect(paths).toContain('/plugins/signalk-onvif-camera/api/streams');
+      expect(paths).toContain('/plugins/signalk-onvif-camera/api/profiles');
+    });
+
+    test('should not re-register routes on subsequent starts', () => {
+      plugin.start(baseOptions);
+      const countAfterFirst = mockApp.get.mock.calls.length;
+      plugin.stop();
+      plugin.start(baseOptions);
+      expect(mockApp.get.mock.calls.length).toBe(countAfterFirst);
+    });
+
+    test('should attach WebSocket server to app.server', () => {
+      plugin.start(baseOptions);
+      // WebSocket.Server attaches an 'upgrade' listener to the underlying server
+      expect(mockServer.on).toHaveBeenCalled();
+    });
+
+    test('should write browserdata.json with snapshotInterval only', () => {
+      const fs = require('fs');
+      const path = require('path');
+      plugin.start({ ...baseOptions, snapshotInterval: 200 });
+      const written = JSON.parse(
+        fs.readFileSync(path.join(__dirname, '..', 'public', 'browserdata.json'), 'utf8')
+      );
+      expect(written).toHaveLength(1);
+      expect(written[0].snapshotInterval).toBe(200);
+      expect(written[0].port).toBeUndefined();
+      expect(written[0].secure).toBeUndefined();
+    });
+
+    test('should log error and not throw when app.server is absent', () => {
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      const appNoServer = { ...mockApp, server: null };
+      jest.resetModules();
+      const createPlugin = require('../index.js');
+      const p = createPlugin(appNoServer);
+      expect(() => p.start(baseOptions)).not.toThrow();
+      consoleSpy.mockRestore();
+    });
+  });
+
+  // ── plugin.stop() ───────────────────────────────────────────────────────────
+
+  describe('plugin.stop()', () => {
+    test('should not throw when called before start', () => {
+      expect(() => plugin.stop()).not.toThrow();
+    });
+
+    test('should clean up wsServer reference after stop', () => {
+      plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
+      expect(() => plugin.stop()).not.toThrow();
+    });
+  });
+
+  // ── camera config building ───────────────────────────────────────────────────
+
+  describe('camera config', () => {
+    test('should sanitize camera nicknames', () => {
+      const options = {
+        snapshotInterval: 100,
+        discoverOnStart: false,
+        autoDiscoveryInterval: 0,
+        cameras: [
+          { address: '192.168.1.10', nickname: 'Bow Camera!', userName: 'u', password: 'p' }
+        ]
+      };
+      // Start without throwing - nickname sanitization happens internally
+      expect(() => plugin.start(options)).not.toThrow();
+    });
+
+    test('should fall back to default credentials when camera has none', () => {
+      const options = {
+        snapshotInterval: 100,
+        discoverOnStart: false,
+        autoDiscoveryInterval: 0,
+        userName: 'defaultUser',
+        password: 'defaultPass',
+        cameras: [
+          { address: '192.168.1.11' }
+        ]
+      };
+      expect(() => plugin.start(options)).not.toThrow();
     });
   });
 });
