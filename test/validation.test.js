@@ -115,8 +115,6 @@ describe('Validation utilities', () => {
   describe('validatePluginOptions', () => {
     test('should validate correct plugin options', () => {
       const validOptions = {
-        port: 8880,
-        secure: false,
         userName: 'admin',
         password: 'password123',
         ipAddress: '192.168.1.1'
@@ -124,20 +122,16 @@ describe('Validation utilities', () => {
       expect(validatePluginOptions(validOptions)).toEqual(validOptions);
     });
 
-    test('should throw ValidationError for invalid options', () => {
+    test('should accept options without optional fields', () => {
+      expect(validatePluginOptions({})).toEqual({});
+    });
+
+    test('should throw ValidationError for null options', () => {
       expect(() => validatePluginOptions(null)).toThrow(ValidationError);
+    });
 
-      expect(() => validatePluginOptions({
-        port: 70000
-      })).toThrow('Invalid port number');
-
-      expect(() => validatePluginOptions({
-        ipAddress: 'invalid'
-      })).toThrow('Invalid IP address format');
-
-      expect(() => validatePluginOptions({
-        secure: 'yes'
-      })).toThrow('Secure flag must be a boolean');
+    test('should throw for invalid IP address', () => {
+      expect(() => validatePluginOptions({ ipAddress: 'invalid' })).toThrow('Invalid IP address format');
     });
   });
 

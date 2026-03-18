@@ -350,10 +350,17 @@
 
   OnvifManager.prototype.startMjpegStream = function () {
     if (this.mjpegUrl) {
+      // Cancel any pending start to prevent multiple simultaneous connections
+      // when the user toggles the stream mode rapidly.
+      if (this._mjpegStartTimer) {
+        clearTimeout(this._mjpegStartTimer);
+        this._mjpegStartTimer = null;
+      }
       // Stop any existing stream first
       this.el['img_snp'].attr('src', '');
       // Small delay to ensure browser closes old connection
-      setTimeout(function () {
+      this._mjpegStartTimer = setTimeout(function () {
+        this._mjpegStartTimer = null;
         // Add timestamp to prevent caching
         this.el['img_snp'].attr('src', this.mjpegUrl + '&t=' + Date.now());
       }.bind(this), 50);
@@ -361,6 +368,11 @@
   };
 
   OnvifManager.prototype.stopMjpegStream = function () {
+    // Cancel any pending stream start
+    if (this._mjpegStartTimer) {
+      clearTimeout(this._mjpegStartTimer);
+      this._mjpegStartTimer = null;
+    }
     // Remove the src to stop the MJPEG stream
     this.el['img_snp'].attr('src', '');
   };
@@ -420,7 +432,7 @@
         snapshotInterval
       );
     } else if (data.error) {
-      console.log(data.error);
+      console.error(data.error);
       // Retry after error with a longer delay
       if (this.device_connected === true && this.stream_mode === 'snapshot') {
         window.setTimeout(this.fetchSnapshot.bind(this), 1000);

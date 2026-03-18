@@ -84,7 +84,7 @@ describe('WebSocket message handling', () => {
     expect(mockConnectionHandler).toBeInstanceOf(Function);
   });
 
-  // ── invalid JSON ──────────────────────────────────────────────────────────────
+  // ── invalid JSON / unknown method ────────────────────────────────────────────
 
   describe('invalid JSON', () => {
     test('should send error response for malformed message', () => {
@@ -101,6 +101,14 @@ describe('WebSocket message handling', () => {
       mockConnectionHandler(socket);
       socket.emit('message', 'not-json');
       expect(socket.send).not.toHaveBeenCalled();
+    });
+
+    test('should respond with error for unknown method', () => {
+      const socket = makeSocket();
+      mockConnectionHandler(socket);
+      socket.emit('message', JSON.stringify({ method: 'nonExistentMethod', params: {} }));
+      expect(socket.send).toHaveBeenCalled();
+      expect(lastSent(socket).error).toMatch(/Unknown method/);
     });
   });
 

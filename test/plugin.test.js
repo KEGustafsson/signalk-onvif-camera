@@ -52,6 +52,18 @@ describe('signalk-onvif-camera plugin', () => {
       expect(plugin.uiSchema.password['ui:widget']).toBe('password');
       expect(plugin.uiSchema.cameras.items.password['ui:widget']).toBe('password');
     });
+
+    test('should not register process-level SIGTERM/SIGINT handlers', () => {
+      // Plugins must not add process-level shutdown handlers — SignalK calls
+      // plugin.stop() directly. Accumulating handlers causes MaxListeners warnings
+      // and bypasses SignalK's own graceful teardown.
+      const sigtermBefore = process.listenerCount('SIGTERM');
+      const sigintBefore  = process.listenerCount('SIGINT');
+      jest.resetModules();
+      require('../index.js');
+      expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
+      expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
+    });
   });
 
   // ── schema ──────────────────────────────────────────────────────────────────
@@ -208,6 +220,23 @@ describe('signalk-onvif-camera plugin', () => {
       plugin.start(opts);
       // Routes must not be re-registered
       expect(mockApp.get.mock.calls.length).toBe(routeCountAfterFirst);
+    });
+  });
+
+  // ── browserdata.json ─────────────────────────────────────────────────────────
+
+  describe('browserdata.json', () => {
+    test('should not crash when write fails', () => {
+      const fs = require('fs');
+      const writeSpy = jest.spyOn(fs, 'writeFileSync').mockImplementationOnce(() => {
+        throw new Error('disk full');
+      });
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      expect(() => plugin.start({
+        snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0
+      })).not.toThrow();
+      writeSpy.mockRestore();
+      consoleSpy.mockRestore();
     });
   });
 

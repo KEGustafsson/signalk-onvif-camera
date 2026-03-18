@@ -43,8 +43,11 @@ describe('Configuration defaults', () => {
     expect(config.websocket.pongTimeout).toBeGreaterThan(0);
   });
 
-  test('should NOT have server port in critical path (plugin uses SignalK port)', () => {
-    // defaultPort is kept for legacy reference but the plugin no longer binds to it
-    expect(config.server).toBeDefined();
+  test('should not have defaultPort (plugin uses SignalK server port)', () => {
+    expect(config.server.defaultPort).toBeUndefined();
+  });
+
+  test('should not have certificate config (plugin no longer manages TLS)', () => {
+    expect(config.certificate).toBeUndefined();
   });
 });

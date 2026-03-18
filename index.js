@@ -82,7 +82,11 @@ module.exports = function createPlugin(app) {
     }
 
     const browserData = [{ 'snapshotInterval': snapshotInterval }];
-    fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
+    try {
+      fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
+    } catch (err) {
+      console.error('Failed to write browserdata.json:', err.message);
+    }
 
     // Register HTTP endpoints on SignalK's Express app (only once across restarts)
     if (!plugin._routesRegistered && typeof app.get === 'function') {
@@ -403,7 +407,7 @@ module.exports = function createPlugin(app) {
       device.fetchSnapshot((error, result) => {
         if (!isActive) return;
 
-        if (!error && result && result.body) {
+        if (!error && result && result.body && result.body.length > 0) {
           const frame = result.body;
           const header = `--${boundary}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`;
 
@@ -570,6 +574,10 @@ module.exports = function createPlugin(app) {
           getStreams(conn, params);
         } else if (method === 'getDeviceInfo') {
           getDeviceInfo(conn, params);
+        } else {
+          if (conn.readyState === WebSocket.OPEN) {
+            conn.send(JSON.stringify({ error: `Unknown method: ${method}` }));
+          }
         }
       } catch (error) {
         console.error('Invalid JSON received from WebSocket:', error.message);
@@ -587,19 +595,22 @@ module.exports = function createPlugin(app) {
 
   let devices = {};
   let deviceNames = {};
-  function startDiscovery(conn) {
+  function startDiscovery(conn, retryCount = 0) {
+    const MAX_RETRIES = 2;
     onvif
       .startProbe(ipAddress)
       .then((device_list) => {
-        // Clear devices only on successful new discovery
-        devices = {};
-        deviceNames = {};
+        // Merge newly found devices into the map rather than clearing it.
+        // Clearing would drop references held by active MJPEG streams or
+        // ongoing connect() calls, breaking them mid-flight.
         device_list.forEach((device) => {
           const odevice = new onvif.OnvifDevice({
             xaddr: device.xaddrs[0]
           });
           const addr = odevice.address;
-          devices[addr] = odevice;
+          if (!devices[addr]) {
+            devices[addr] = odevice;
+          }
           deviceNames[addr] = (device.name).replace(/%20/g, ' ');
         });
         const devs = {};
@@ -625,11 +636,11 @@ module.exports = function createPlugin(app) {
           }
           const res = { id: 'startDiscovery', result: devs };
           if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
-        } else if (error.message === 'Discovery already in progress') {
-          // No cached devices, wait and retry once
-          app.debug('Discovery in progress, waiting to retry...');
+        } else if (error.message === 'Discovery already in progress' && retryCount < MAX_RETRIES) {
+          // No cached devices yet; retry a limited number of times
+          app.debug(`Discovery in progress, retry ${retryCount + 1}/${MAX_RETRIES}...`);
           setTimeout(() => {
-            startDiscovery(conn);
+            startDiscovery(conn, retryCount + 1);
           }, 3000);
         } else {
           const res = { id: 'startDiscovery', error: error.message };
@@ -1064,55 +1075,5 @@ module.exports = function createPlugin(app) {
     });
   }
 
-  // Store plugin instance for graceful shutdown
-  if (!global.__onvifPluginInstances) {
-    global.__onvifPluginInstances = [];
-  }
-  global.__onvifPluginInstances.push(plugin);
-
   return plugin;
 };
-
-// Graceful shutdown handling
-let shutdownInProgress = false;
-
-function gracefulShutdown(signal) {
-  if (shutdownInProgress) return;
-  shutdownInProgress = true;
-
-  console.log(`\n${signal} received. Shutting down gracefully...`);
-
-  // Stop all plugin instances
-  if (global.__onvifPluginInstances) {
-    global.__onvifPluginInstances.forEach((plugin) => {
-      if (plugin && typeof plugin.stop === 'function') {
-        try {
-          plugin.stop();
-        } catch (error) {
-          console.error('Error stopping plugin:', error.message);
-        }
-      }
-    });
-  }
-
-  // Give servers time to close gracefully
-  setTimeout(() => {
-    console.log('Shutdown complete');
-    process.exit(0);
-  }, 1000);
-}
-
-// Register shutdown handlers
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Handle uncaught errors
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught exception:', error);
-  gracefulShutdown('UNCAUGHT_EXCEPTION');
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('UNHANDLED_REJECTION');
-});
