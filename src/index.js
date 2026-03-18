@@ -145,11 +145,11 @@
     const url = wsScheme + '://' + location.host + '/plugins/signalk-onvif-camera/ws';
     this.ws = new WebSocket(url);
     this.ws.onopen = function () {
-      console.log('WebSocket connection established.');
+      console.debug('WebSocket connection established.');
       this.sendRequest('startDiscovery');
     }.bind(this);
     this.ws.onclose = function (_event) {
-      console.log('WebSocket connection closed.');
+      console.debug('WebSocket connection closed.');
       this.showMessageModal(
         'Error',
         'The WebSocket connection was closed. Check if the SignalK server and the ONVIF Camera plugin are running.'

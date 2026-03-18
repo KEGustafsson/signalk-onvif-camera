@@ -146,35 +146,39 @@ module.exports = function createPlugin(app) {
       onvif.startProbe(ipAddress)
         .then((device_list) => {
           device_list.forEach((device) => {
-            const odevice = new onvif.OnvifDevice({
-              xaddr: device.xaddrs[0]
-            });
-            const addr = odevice.address;
-            const deviceName = (device.name || addr).replace(/%20/g, ' ');
+            try {
+              const odevice = new onvif.OnvifDevice({
+                xaddr: device.xaddrs[0]
+              });
+              const addr = odevice.address;
+              const deviceName = (device.name || addr).replace(/%20/g, ' ');
 
-            if (!devices[addr]) {
-              devices[addr] = odevice;
-              deviceNames[addr] = deviceName;
-              app.debug(`Auto-discovered new camera: ${deviceName} (${addr})`);
+              if (!devices[addr]) {
+                devices[addr] = odevice;
+                deviceNames[addr] = deviceName;
+                app.debug(`Auto-discovered new camera: ${deviceName} (${addr})`);
 
-              // Publish discovery to Signal K if enabled
-              if (enableSignalKIntegration && app.handleMessage) {
-                const nickname = getCameraNickname(addr);
-                app.handleMessage(plugin.id, {
-                  updates: [{
-                    source: { label: plugin.id },
-                    timestamp: new Date().toISOString(),
-                    values: [{
-                      path: `sensors.camera.${nickname}`,
-                      value: {
-                        address: addr,
-                        discovered: true,
-                        connected: false
-                      }
+                // Publish discovery to Signal K if enabled
+                if (enableSignalKIntegration && app.handleMessage) {
+                  const nickname = getCameraNickname(addr);
+                  app.handleMessage(plugin.id, {
+                    updates: [{
+                      source: { label: plugin.id },
+                      timestamp: new Date().toISOString(),
+                      values: [{
+                        path: `sensors.camera.${nickname}`,
+                        value: {
+                          address: addr,
+                          discovered: true,
+                          connected: false
+                        }
+                      }]
                     }]
-                  }]
-                });
+                  });
+                }
               }
+            } catch (err) {
+              app.debug(`Auto-discovery: error processing device: ${err.message}`);
             }
           });
         })
@@ -194,48 +198,56 @@ module.exports = function createPlugin(app) {
         .then((device_list) => {
           app.debug(`Startup discovery found ${device_list.length} device(s)`);
           device_list.forEach((device) => {
-            const odevice = new onvif.OnvifDevice({
-              xaddr: device.xaddrs[0]
-            });
-            const addr = odevice.address;
-            const deviceName = (device.name || addr).replace(/%20/g, ' ');
-
-            if (!devices[addr]) {
-              devices[addr] = odevice;
-              deviceNames[addr] = deviceName;
-              app.debug(`Startup discovered camera: ${deviceName} (${addr})`);
-            }
-
-            // Auto-connect pre-configured cameras and publish to Signal K
-            const camConfig = cameraConfigs[addr];
-            if (camConfig && enableSignalKIntegration) {
-              // Set auth and initialize device
-              odevice.setAuth(camConfig.userName, camConfig.password);
-              odevice.init((error, result) => {
-                if (error) {
-                  app.debug(`Failed to initialize camera ${addr}: ${error.message}`);
-                  return;
-                }
-                app.debug(`Auto-connected to pre-configured camera: ${addr}`);
-                publishCameraToSignalK(addr, result);
+            try {
+              const odevice = new onvif.OnvifDevice({
+                xaddr: device.xaddrs[0]
               });
-            } else if (enableSignalKIntegration && app.handleMessage) {
-              // Just publish discovery info for non-configured cameras
-              const nickname = getCameraNickname(addr);
-              app.handleMessage(plugin.id, {
-                updates: [{
-                  source: { label: plugin.id },
-                  timestamp: new Date().toISOString(),
-                  values: [{
-                    path: `sensors.camera.${nickname}`,
-                    value: {
-                      address: addr,
-                      discovered: true,
-                      connected: false
-                    }
+              const addr = odevice.address;
+              const deviceName = (device.name || addr).replace(/%20/g, ' ');
+
+              if (!devices[addr]) {
+                devices[addr] = odevice;
+                deviceNames[addr] = deviceName;
+                app.debug(`Startup discovered camera: ${deviceName} (${addr})`);
+              }
+
+              // Auto-connect pre-configured cameras and publish to Signal K
+              const camConfig = cameraConfigs[addr];
+              if (camConfig && enableSignalKIntegration) {
+                // Set auth and initialize device
+                odevice.setAuth(camConfig.userName, camConfig.password);
+                odevice.init((error, result) => {
+                  if (error) {
+                    app.debug(`Failed to initialize camera ${addr}: ${error.message}`);
+                    return;
+                  }
+                  try {
+                    app.debug(`Auto-connected to pre-configured camera: ${addr}`);
+                    publishCameraToSignalK(addr, result);
+                  } catch (err) {
+                    app.debug(`Error publishing camera ${addr} to Signal K: ${err.message}`);
+                  }
+                });
+              } else if (enableSignalKIntegration && app.handleMessage) {
+                // Just publish discovery info for non-configured cameras
+                const nickname = getCameraNickname(addr);
+                app.handleMessage(plugin.id, {
+                  updates: [{
+                    source: { label: plugin.id },
+                    timestamp: new Date().toISOString(),
+                    values: [{
+                      path: `sensors.camera.${nickname}`,
+                      value: {
+                        address: addr,
+                        discovered: true,
+                        connected: false
+                      }
+                    }]
                   }]
-                }]
-              });
+                });
+              }
+            } catch (err) {
+              app.debug(`Startup discovery: error processing device: ${err.message}`);
             }
           });
         })
@@ -361,13 +373,35 @@ module.exports = function createPlugin(app) {
     }
   };
 
+  // Returns false and sends a 401 if SignalK's security strategy rejects the request.
+  // When no security strategy is installed (open/dev mode) all requests are allowed.
+  function isAuthorized(req, res) {
+    if (app.securityStrategy && typeof app.securityStrategy.shouldAllowRequest === 'function') {
+      if (!app.securityStrategy.shouldAllowRequest(req, 'READ')) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('Unauthorized');
+        return false;
+      }
+    }
+    return true;
+  }
+
   // MJPEG streaming handler
   function handleMjpegStream(req, res, query) {
+    if (!isAuthorized(req, res)) return;
+
     const address = query.address;
     const profileToken = query.profile;
     if (!address) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('Missing address parameter');
+      return;
+    }
+    try {
+      validateDeviceAddress(address);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end(e.message);
       return;
     }
 
@@ -444,11 +478,20 @@ module.exports = function createPlugin(app) {
 
   // Direct snapshot HTTP endpoint
   function handleSnapshotRequest(req, res, query) {
+    if (!isAuthorized(req, res)) return;
+
     const address = query.address;
     const profileToken = query.profile;
     if (!address) {
       res.writeHead(400, { 'Content-Type': 'text/plain' });
       res.end('Missing address parameter');
+      return;
+    }
+    try {
+      validateDeviceAddress(address);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'text/plain' });
+      res.end(e.message);
       return;
     }
 
@@ -483,10 +526,19 @@ module.exports = function createPlugin(app) {
 
   // Stream URIs endpoint
   function handleStreamInfoRequest(req, res, query) {
+    if (!isAuthorized(req, res)) return;
+
     const address = query.address;
     if (!address) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Missing address parameter' }));
+      return;
+    }
+    try {
+      validateDeviceAddress(address);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
       return;
     }
 
@@ -515,10 +567,19 @@ module.exports = function createPlugin(app) {
 
   // Profiles endpoint
   function handleProfilesRequest(req, res, query) {
+    if (!isAuthorized(req, res)) return;
+
     const address = query.address;
     if (!address) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Missing address parameter' }));
+      return;
+    }
+    try {
+      validateDeviceAddress(address);
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
       return;
     }
 
@@ -553,7 +614,7 @@ module.exports = function createPlugin(app) {
       try {
         const data = JSON.parse(message.toString());
         const method = data['method'];
-        const params = data['params'];
+        const params = data['params'] || {};
         if (method === 'startDiscovery') {
           startDiscovery(conn);
         } else if (method === 'connect') {
@@ -587,7 +648,6 @@ module.exports = function createPlugin(app) {
       }
     });
 
-    conn.on('close', function () {});
     conn.on('error', function (error) {
       console.error('WebSocket error:', error);
     });

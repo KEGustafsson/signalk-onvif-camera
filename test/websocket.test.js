@@ -110,6 +110,19 @@ describe('WebSocket message handling', () => {
       expect(socket.send).toHaveBeenCalled();
       expect(lastSent(socket).error).toMatch(/Unknown method/);
     });
+
+    test('should not throw when params field is absent from message', async () => {
+      // Regression: before fix, missing params caused TypeError in handlers
+      const socket = makeSocket();
+      mockConnectionHandler(socket);
+      expect(() =>
+        socket.emit('message', JSON.stringify({ method: 'connect' }))
+      ).not.toThrow();
+      await new Promise(r => setTimeout(r, 10));
+      // Should get an error response (invalid address), not a crash
+      expect(socket.send).toHaveBeenCalled();
+      expect(lastSent(socket).error).toBeDefined();
+    });
   });
 
   // ── socket lifecycle ─────────────────────────────────────────────────────────

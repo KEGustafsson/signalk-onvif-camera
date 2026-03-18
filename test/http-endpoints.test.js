@@ -92,6 +92,50 @@ describe('HTTP endpoint handlers', () => {
     try { plugin.stop(); } catch (_) {}
   });
 
+  // ── auth helper ─────────────────────────────────────────────────────────────
+
+  describe('authorization', () => {
+    test('should return 401 on all endpoints when securityStrategy rejects', () => {
+      // Attach a security strategy that always denies
+      mockApp.securityStrategy = {
+        shouldAllowRequest: jest.fn(() => false)
+      };
+
+      const endpoints = [
+        '/plugins/signalk-onvif-camera/mjpeg',
+        '/plugins/signalk-onvif-camera/snapshot',
+        '/plugins/signalk-onvif-camera/api/streams',
+        '/plugins/signalk-onvif-camera/api/profiles'
+      ];
+
+      for (const ep of endpoints) {
+        const res = makeRes();
+        routes[ep](makeReq({ address: '10.0.0.1' }), res);
+        expect(res.writeHead).toHaveBeenCalledWith(401, expect.any(Object));
+        expect(res.end).toHaveBeenCalledWith('Unauthorized');
+      }
+    });
+
+    test('should allow requests when securityStrategy approves', () => {
+      mockApp.securityStrategy = {
+        shouldAllowRequest: jest.fn(() => true)
+      };
+
+      const res = makeRes();
+      routes['/plugins/signalk-onvif-camera/mjpeg'](makeReq({}), res);
+      // Missing address → 400, but NOT 401 — auth passed
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
+    });
+
+    test('should allow requests when no securityStrategy is installed', () => {
+      // mockApp has no securityStrategy — open/dev mode
+      const res = makeRes();
+      routes['/plugins/signalk-onvif-camera/mjpeg'](makeReq({}), res);
+      expect(res.writeHead).not.toHaveBeenCalledWith(401, expect.any(Object));
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
+    });
+  });
+
   // ── /mjpeg ──────────────────────────────────────────────────────────────────
 
   describe('GET /plugins/signalk-onvif-camera/mjpeg', () => {
@@ -103,6 +147,12 @@ describe('HTTP endpoint handlers', () => {
       routes[path](req, res);
       expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
       expect(res.end).toHaveBeenCalledWith('Missing address parameter');
+    });
+
+    test('should return 400 for malformed address', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: 'not-an-ip' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
     });
 
     test('should return 404 when device is not found', () => {
@@ -124,6 +174,12 @@ describe('HTTP endpoint handlers', () => {
       routes[path](makeReq({}), res);
       expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
       expect(res.end).toHaveBeenCalledWith('Missing address parameter');
+    });
+
+    test('should return 400 for malformed address', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: 'not-an-ip' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
     });
 
     test('should return 404 when device is not found', () => {
@@ -174,6 +230,12 @@ describe('HTTP endpoint handlers', () => {
       expect(body.error).toBeDefined();
     });
 
+    test('should return 400 for malformed address', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: 'not-an-ip' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
+    });
+
     test('should return 404 when device not found', () => {
       const res = makeRes();
       routes[path](makeReq({ address: '10.0.0.3' }), res);
@@ -192,6 +254,12 @@ describe('HTTP endpoint handlers', () => {
       expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
       const body = JSON.parse(res.end.mock.calls[0][0]);
       expect(body.error).toBeDefined();
+    });
+
+    test('should return 400 for malformed address', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: 'not-an-ip' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
     });
 
     test('should return 404 when device not found', () => {

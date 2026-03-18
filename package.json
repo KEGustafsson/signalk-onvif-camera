@@ -3,12 +3,15 @@
   "version": "0.8.0",
   "description": "Signal K Onvif Camera Interface",
   "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "prepublish": "npm run build",
+    "prepublishOnly": "npm run build",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
@@ -22,7 +25,10 @@
     "signalk-webapp",
     "signalk-category-utility"
   ],
-  "repository": "https://github.com/KEGustafsson/signalk-onvif-camera",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KEGustafsson/signalk-onvif-camera"
+  },
   "author": "Karl-Erik Gustafsson",
   "license": "MIT",
   "dependencies": {
