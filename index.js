@@ -42,7 +42,6 @@ module.exports = function createPlugin(app) {
   let wsServer;
   let userName;
   let password;
-  let startServer;
   let autoDiscoveryInterval;
   let autoDiscoveryTimer = null;
   let startupDiscoveryTimer = null;
@@ -102,7 +101,12 @@ module.exports = function createPlugin(app) {
       plugin._routesRegistered = true;
     }
 
-    // Attach WebSocket server to SignalK's HTTP server
+    // Attach WebSocket server to SignalK's HTTP server.
+    // Close any existing wsServer first to prevent leaks on restart.
+    if (wsServer) {
+      wsServer.close();
+      wsServer = null;
+    }
     if (app.server) {
       wsServer = new WebSocket.Server({
         server: app.server,
@@ -246,11 +250,9 @@ module.exports = function createPlugin(app) {
       clearTimeout(startupDiscoveryTimer);
       startupDiscoveryTimer = null;
     }
-    // Clean up MJPEG streams
-    mjpegStreams.forEach((stream, _key) => {
-      if (stream.timer) {
-        clearInterval(stream.timer);
-      }
+    // Abort all active MJPEG streams so their sendFrame loops exit
+    mjpegStreams.forEach((stream) => {
+      if (stream.abort) stream.abort();
     });
     mjpegStreams.clear();
 
@@ -421,7 +423,7 @@ module.exports = function createPlugin(app) {
       });
     };
 
-    mjpegStreams.set(streamId, { timer: null, res });
+    mjpegStreams.set(streamId, { abort: () => { isActive = false; }, res });
 
     req.on('close', () => {
       isActive = false;

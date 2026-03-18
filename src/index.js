@@ -152,13 +152,13 @@
       console.log('WebSocket connection closed.');
       this.showMessageModal(
         'Error',
-        'The WebSocket connection was closed. Check if the server.js is running.'
+        'The WebSocket connection was closed. Check if the SignalK server and the ONVIF Camera plugin are running.'
       );
     }.bind(this);
     this.ws.onerror = function (_error) {
       this.showMessageModal(
         'Error',
-        'Failed to establish a WebSocket connection. Check if the server.js is running.'
+        'Failed to establish a WebSocket connection. Check if the SignalK server and the ONVIF Camera plugin are running.'
       );
     }.bind(this);
     this.ws.onmessage = function (res) {
