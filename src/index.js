@@ -187,12 +187,9 @@
   };
 
   OnvifManager.prototype.sendRequest = function (method, params) {
-    this.ws.send(
-      JSON.stringify({
-        method: method,
-        params: params
-      })
-    );
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ method: method, params: params }));
+    }
   };
 
   OnvifManager.prototype.pressedConnectButton = function (_event) {

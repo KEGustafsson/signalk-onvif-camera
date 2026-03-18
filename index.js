@@ -51,6 +51,7 @@ module.exports = function createPlugin(app) {
   let cameraConfigs = {};
   const mjpegStreams = new Map(); // Track active MJPEG streams
   const MAX_MJPEG_STREAMS = 10;
+  let mjpegStreamCounter = 0;
 
   plugin.start = function (options, _restartPlugin) {
     userName = options.userName;
@@ -128,7 +129,13 @@ module.exports = function createPlugin(app) {
       wsServer.on('connection', wsServerConnection);
 
       upgradeHandler = (request, socket, head) => {
-        const url = new URL(request.url, 'ws://localhost');
+        let url;
+        try {
+          url = new URL(request.url, 'ws://localhost');
+        } catch (e) {
+          socket.destroy();
+          return;
+        }
         if (url.pathname === '/plugins/signalk-onvif-camera/ws') {
           wsServer.handleUpgrade(request, socket, head, (ws) => {
             wsServer.emit('connection', ws, request);
@@ -460,7 +467,7 @@ module.exports = function createPlugin(app) {
       res.socket.setNoDelay(true);
     }
 
-    const streamId = `${address}-${Date.now()}`;
+    const streamId = `${address}-${++mjpegStreamCounter}`;
     let isActive = true;
 
     const sendFrame = () => {
@@ -1154,6 +1161,11 @@ module.exports = function createPlugin(app) {
 
     const ptz = device.services.ptz;
     const profile = device.getCurrentProfile();
+    if (!profile) {
+      const res = { id: 'ptzHome', error: 'No media profile selected' };
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
+      return;
+    }
     const ptzParams = {
       ProfileToken: profile['token'],
       Speed: 1
