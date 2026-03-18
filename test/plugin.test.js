@@ -167,11 +167,18 @@ describe('signalk-onvif-camera plugin', () => {
 
     test('should write browserdata.json with snapshotInterval only', () => {
       const fs = require('fs');
-      const path = require('path');
+      let capturedData;
+      const originalWriteFileSync = fs.writeFileSync;
+      jest.spyOn(fs, 'writeFileSync').mockImplementation((filePath, data) => {
+        if (filePath.includes('browserdata.json')) {
+          capturedData = data;
+        } else {
+          originalWriteFileSync(filePath, data);
+        }
+      });
       plugin.start({ ...baseOptions, snapshotInterval: 200 });
-      const written = JSON.parse(
-        fs.readFileSync(path.join(__dirname, '..', 'public', 'browserdata.json'), 'utf8')
-      );
+      fs.writeFileSync.mockRestore();
+      const written = JSON.parse(capturedData);
       expect(written).toHaveLength(1);
       expect(written[0].snapshotInterval).toBe(200);
       expect(written[0].port).toBeUndefined();
@@ -206,7 +213,6 @@ describe('signalk-onvif-camera plugin', () => {
       // and stop() calls them. We check this by inspecting that stop() does not
       // throw when a stream with an abort function is in the map.
       plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
-      const abortSpy = jest.fn();
       // Access mjpegStreams via closure isn't possible externally; instead verify
       // stop() doesn't throw even with pending stream state.
       expect(() => plugin.stop()).not.toThrow();

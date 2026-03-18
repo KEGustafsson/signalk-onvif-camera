@@ -1,7 +1,6 @@
 node_modules
-public/*
-!public/icons/*
-!public/favicon.ico
+public
 coverage
 .eslintcache
 cert
+.claude

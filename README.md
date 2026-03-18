@@ -2,53 +2,63 @@
 
 ONVIF Camera interface for Signal K. For IP cameras that support ONVIF control, fixed and PTZ.
 
-## ONVIF Camera plugin config in Signal K server.
-
-![config](doc/config.jpg)
-- IP address of ONVIF LAN. Default, leave empty
-- Select port for server
-- Select https/wss if you would like to use secure server
-- Enter ONVIF profile username
-- Enter ONVIF profile password
-- Add camera IP to list (user/pass are used to login to camera)
-
-## ONVIF in IP Camera.
-
-Example of HikVision IP camera ONVIF
-
-![onvif](doc/onvif.jpg)
-- Add ONVIF user to IP camera if applicable
-
-## ONVIF Camera Webapp.
-
-![webapp](doc/webapp.jpg)
--  Service can be accessed from Webapps menu, press "Signalk-onvif-camera" button 
-
-## ONVIF Camera service.
-
-![service](doc/service.jpg)
-- ONVIF cameras are searched from local network
-- When search is ready then "Select a device" is prompted
-- Camera is selected from dropdown menu and then press "Connect" button
-
-## ONVIF Camera in Use.
-
-![inuse](doc/inuse.jpg)
-- Cursors and home button for PTZ camera
-- Zoom in/out
-- Control speed
-- Disconnect
-- Hide/show controls 
-
 ## Installation
 
+Install via the Signal K Appstore, or manually:
+
+```bash
+npm install signalk-onvif-camera
 ```
-$ npm install signalk-onvif-camera --save
+
+## Plugin Configuration
+
+![config](doc/config.jpg)
+
+- Enter ONVIF profile username and password
+- Add camera IP addresses to the list
+
+## ONVIF Camera Setup
+
+Example of HikVision IP camera ONVIF configuration:
+
+![onvif](doc/onvif.jpg)
+
+- Add an ONVIF user to your IP camera if applicable
+
+## Webapp
+
+![webapp](doc/webapp.jpg)
+
+Access the webapp from the Signal K Webapps menu by selecting "Signalk-onvif-camera".
+
+## Camera Service
+
+![service](doc/service.jpg)
+
+- ONVIF cameras are discovered on the local network
+- Select a device from the dropdown menu
+- Press "Connect" to connect to the camera
+
+## Camera Controls
+
+![inuse](doc/inuse.jpg)
+
+- PTZ controls: pan, tilt, and home button
+- Zoom in/out
+- Adjustable control speed
+- Disconnect
+- Hide/show controls
+
+## Development
+
+```bash
+npm install
+npm run build       # Build frontend (cleans public/ first)
+npm run dev         # Vite dev server
+npm test            # Run tests with coverage
+npm run lint        # Lint with ESLint
 ```
-or
-```
-$ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
-```
+
 ## Version control
 
 - v0.0.1, 1st version for testing
@@ -69,6 +79,12 @@ $ npm install https://github.com/KEGustafsson/signalk-onvif-camera.git --save
 - v0.7.0, certs stored to permanent location
 - v0.7.1, fix WebSocket connection issues
 - v0.8.0, webpack changed to vite
+- v1.0.0: WebSocket noServer mode, build pipeline cleanup
 
 ## Credits
-https://github.com/futomi/node-onvif 
+
+https://github.com/futomi/node-onvif
+
+## License
+
+MIT

@@ -36,10 +36,9 @@ module.exports = function createPlugin(app) {
   plugin.id = 'signalk-onvif-camera';
   plugin.name = 'Signal K Onvif Camera Interface';
   plugin.description = 'Signal K Onvif Camera Interface';
-  const setStatus = app.setPluginStatus || app.setProviderStatus;
-
   let ipAddress;
   let wsServer;
+  let upgradeHandler;
   let userName;
   let password;
   let autoDiscoveryInterval;
@@ -116,12 +115,29 @@ module.exports = function createPlugin(app) {
       wsServer.close();
       wsServer = null;
     }
+    if (upgradeHandler && app.server) {
+      app.server.removeListener('upgrade', upgradeHandler);
+      upgradeHandler = null;
+    }
     if (app.server) {
-      wsServer = new WebSocket.Server({
-        server: app.server,
-        path: '/plugins/signalk-onvif-camera/ws'
-      });
+      // Use noServer mode so we don't interfere with SignalK's own
+      // WebSocket server on the same HTTP server.  With the default
+      // { server } option the ws library adds its own 'upgrade'
+      // listener which can conflict with SignalK's stream endpoint.
+      wsServer = new WebSocket.Server({ noServer: true });
       wsServer.on('connection', wsServerConnection);
+
+      upgradeHandler = (request, socket, head) => {
+        const url = new URL(request.url, 'ws://localhost');
+        if (url.pathname === '/plugins/signalk-onvif-camera/ws') {
+          wsServer.handleUpgrade(request, socket, head, (ws) => {
+            wsServer.emit('connection', ws, request);
+          });
+        }
+        // Non-matching paths are left alone for SignalK to handle
+      };
+      app.server.on('upgrade', upgradeHandler);
+
       app.debug('Onvif Camera WebSocket server attached to SignalK server');
     } else {
       app.debug('SignalK app.server not available - WebSocket disabled');
@@ -280,6 +296,10 @@ module.exports = function createPlugin(app) {
     });
     mjpegStreams.clear();
 
+    if (upgradeHandler && app.server) {
+      app.server.removeListener('upgrade', upgradeHandler);
+      upgradeHandler = null;
+    }
     if (wsServer) {
       wsServer.close(() => {
         app.debug('Onvif Camera WebSocket server closed');

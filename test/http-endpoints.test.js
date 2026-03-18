@@ -35,33 +35,6 @@ function makeReq(query = {}) {
   return req;
 }
 
-function makeDevice(overrides = {}) {
-  return {
-    fetchSnapshot: jest.fn((cb) =>
-      cb(null, { headers: { 'content-type': 'image/jpeg' }, body: Buffer.from('fakeimage') })
-    ),
-    changeProfile: jest.fn(),
-    getProfileList: jest.fn(() => [
-      {
-        token: 'Profile_1',
-        name: 'Main',
-        stream: { rtsp: 'rtsp://cam/live', http: null, udp: null },
-        snapshot: 'http://cam/snapshot',
-        video: { encoder: { resolution: { width: 1920, height: 1080 }, framerate: 30, encoding: 'H264' } },
-        audio: null
-      }
-    ]),
-    getCurrentProfile: jest.fn(() => ({
-      token: 'Profile_1',
-      name: 'Main',
-      stream: { rtsp: 'rtsp://cam/live', http: null, udp: null },
-      snapshot: 'http://cam/snapshot',
-      video: { encoder: { resolution: { width: 1920, height: 1080 }, framerate: 30, encoding: 'H264' } }
-    })),
-    ...overrides
-  };
-}
-
 describe('HTTP endpoint handlers', () => {
   let plugin;
   let routes;

@@ -10,7 +10,7 @@ const EventEmitter = require('events');
 // ── ws mock (must be at module level; factory may only reference `mock*` vars) ─
 
 let mockConnectionHandler = null;
-let mockWsClose = jest.fn();
+const mockWsClose = jest.fn();
 
 jest.mock('ws', () => {
   const mockWsServer = jest.fn().mockImplementation(function () {
@@ -18,6 +18,8 @@ jest.mock('ws', () => {
       if (event === 'connection') mockConnectionHandler = handler;
     });
     this.close = mockWsClose;
+    this.handleUpgrade = jest.fn((req, socket, head, cb) => { cb(socket); });
+    this.emit = jest.fn();
   });
   return { Server: mockWsServer, OPEN: 1 };
 });
@@ -73,10 +75,10 @@ describe('WebSocket message handling', () => {
 
   // ── setup verification ───────────────────────────────────────────────────────
 
-  test('should create ws.Server with correct path', () => {
+  test('should create ws.Server in noServer mode', () => {
     const WS = require('ws');
     expect(WS.Server).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '/plugins/signalk-onvif-camera/ws' })
+      expect.objectContaining({ noServer: true })
     );
   });
 

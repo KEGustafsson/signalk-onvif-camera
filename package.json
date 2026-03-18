@@ -1,13 +1,12 @@
 {
   "name": "signalk-onvif-camera",
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0",
   "description": "Signal K Onvif Camera Interface",
   "main": "index.js",
   "files": [
     "index.js",
     "lib/",
-    "public/",
-    "icons/"
+    "public/"
   ],
   "engines": {
     "node": ">=18.0.0"
@@ -18,12 +17,13 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "prepublishOnly": "npm run lint && npm test && npm run build",
+    "clean": "node -e \"require('fs').rmSync('./public',{recursive:true,force:true})\"",
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run clean && vite build",
     "preview": "vite preview"
   },
   "signalk": {
-    "appIcon": "./icons/icon-72x72.png",
+    "appIcon": "./public/icons/icon-72x72.png",
     "displayName": "Signalk-onvif-camera"
   },
   "keywords": [
