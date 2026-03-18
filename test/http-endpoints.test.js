@@ -188,33 +188,12 @@ describe('HTTP endpoint handlers', () => {
       expect(res.writeHead).toHaveBeenCalledWith(404, expect.any(Object));
     });
 
-    test('should return 200 with image data when device exists', (done) => {
-      // We need to inject a device; start a WS connection first to set up state
-      // Instead, call connect via a fake WS connection by exercising wsServerConnection
-      // directly. Here we test the handler in isolation by mocking devices via
-      // triggering a discovery callback. For simplicity, spy on handleSnapshotRequest
-      // indirectly by wiring a fake device via the internal device map.
-      //
-      // Approach: connect via WebSocket, then call snapshot endpoint.
-      const WebSocket = require('ws');
-      const wsPath = '/plugins/signalk-onvif-camera/ws';
-
-      // Create a client connected to the plugin's WS server
-      const wsServer = plugin._wsServer;
-      if (!wsServer) {
-        // If wsServer isn't exposed, skip this integration test
-        done();
-        return;
-      }
-      done();
-    });
-
-    test('should return 500 on snapshot fetch error', () => {
-      // Can't directly inject device without WS round-trip; test is covered via
-      // integration in websocket.test.js. This placeholder ensures the error path
-      // is acknowledged in the suite.
-      expect(true).toBe(true);
-    });
+    // Device injection requires a WS discovery round-trip not available in this
+    // unit-test harness (the internal device map is not exposed). These paths
+    // are covered by integration tests; mark as todo so the suite stays honest.
+    test.todo('should return 200 with image data when device exists');
+    test.todo('should return 500 on snapshot fetch error');
+    test.todo('should return 502 when snapshot returns no data');
   });
 
   // ── /api/streams ─────────────────────────────────────────────────────────────

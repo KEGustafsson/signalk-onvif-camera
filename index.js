@@ -85,7 +85,7 @@ module.exports = function createPlugin(app) {
     try {
       fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
     } catch (err) {
-      console.error('Failed to write browserdata.json:', err.message);
+      app.debug('Failed to write browserdata.json:', err.message);
     }
 
     // Register HTTP endpoints on SignalK's Express app (only once across restarts)
@@ -119,7 +119,7 @@ module.exports = function createPlugin(app) {
       wsServer.on('connection', wsServerConnection);
       app.debug('Onvif Camera WebSocket server attached to SignalK server');
     } else {
-      console.error('SignalK app.server not available - WebSocket disabled');
+      app.debug('SignalK app.server not available - WebSocket disabled');
     }
 
     // Start auto-discovery timer if configured
@@ -183,7 +183,7 @@ module.exports = function createPlugin(app) {
           });
         })
         .catch((error) => {
-          console.error('Auto-discovery error:', error.message);
+          app.debug('Auto-discovery error:', error.message);
         });
     }, autoDiscoveryInterval * 1000);
   }
@@ -510,11 +510,17 @@ module.exports = function createPlugin(app) {
     device.fetchSnapshot((error, result) => {
       if (error) {
         res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end('Failed to fetch snapshot: ' + error.message);
+        res.end('Failed to fetch snapshot: ' + (error.message || error));
         return;
       }
 
-      const ct = result.headers['content-type'] || 'image/jpeg';
+      if (!result || !result.body) {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('Snapshot returned no data');
+        return;
+      }
+
+      const ct = (result.headers && result.headers['content-type']) || 'image/jpeg';
       res.writeHead(200, {
         'Content-Type': ct,
         'Content-Length': result.body.length,
@@ -641,7 +647,7 @@ module.exports = function createPlugin(app) {
           }
         }
       } catch (error) {
-        console.error('Invalid JSON received from WebSocket:', error.message);
+        app.debug('Invalid JSON received from WebSocket:', error.message);
         if (conn.readyState === WebSocket.OPEN) {
           conn.send(JSON.stringify({ error: 'Invalid JSON format' }));
         }
@@ -649,7 +655,7 @@ module.exports = function createPlugin(app) {
     });
 
     conn.on('error', function (error) {
-      console.error('WebSocket error:', error);
+      app.debug('WebSocket error:', error.message || error);
     });
   }
 
@@ -671,7 +677,7 @@ module.exports = function createPlugin(app) {
           if (!devices[addr]) {
             devices[addr] = odevice;
           }
-          deviceNames[addr] = (device.name).replace(/%20/g, ' ');
+          deviceNames[addr] = (device.name || addr).replace(/%20/g, ' ');
         });
         const devs = {};
         for (const addr in devices) {
@@ -751,7 +757,7 @@ module.exports = function createPlugin(app) {
     device.init((error, result) => {
       const res = { id: 'connect' };
       if (error) {
-        res['error'] = error.toString();
+        res.error = error.message || error.toString();
       } else {
         // Include additional info in result
         const currentProfile = device.getCurrentProfile();
@@ -1012,13 +1018,13 @@ module.exports = function createPlugin(app) {
     device.fetchSnapshot((error, result) => {
       const res = { id: 'fetchSnapshot' };
       if (error) {
-        res['error'] = error.toString();
+        res.error = error.message || error.toString();
+      } else if (!result || !result.body) {
+        res.error = 'Snapshot returned no data';
       } else {
-        const ct = result['headers']['content-type'];
-        const buffer = result['body'];
-        const b64 = buffer.toString('base64');
-        const uri = 'data:' + ct + ';base64,' + b64;
-        res['result'] = uri;
+        const ct = (result.headers && result.headers['content-type']) || 'image/jpeg';
+        const b64 = result.body.toString('base64');
+        res.result = 'data:' + ct + ';base64,' + b64;
       }
       if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     });

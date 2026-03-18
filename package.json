@@ -3,6 +3,12 @@
   "version": "0.8.0",
   "description": "Signal K Onvif Camera Interface",
   "main": "index.js",
+  "files": [
+    "index.js",
+    "lib/",
+    "public/",
+    "icons/"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },
