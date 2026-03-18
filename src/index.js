@@ -1,33 +1,13 @@
 (function () {
-  let scheme;
-  let httpScheme;
-  let port;
   let snapshotInterval = 100;
 
   readTextFile('browserdata.json', function (text){
     const browserData = JSON.parse(text);
-    port = browserData[0].port;
     snapshotInterval = browserData[0].snapshotInterval || 100;
-    if (browserData[0].secure) {
-      scheme = 'wss';
-      httpScheme = 'https';
-    } else {
-      scheme = 'ws';
-      httpScheme = 'http';
-    }
+    $(document).ready(function () {
+      new OnvifManager().init();
+    });
   });
-
-  waitForElement();
-
-  function waitForElement(){
-    if(typeof port !== 'undefined'){
-      $(document).ready(function () {
-        new OnvifManager().init();
-      });
-    } else {
-      setTimeout(waitForElement, 250);
-    }
-  }
 
   function readTextFile(file, callback) {
     const rawFile = new XMLHttpRequest();
@@ -161,7 +141,8 @@
   };
 
   OnvifManager.prototype.initWebSocketConnection = function () {
-    const url = scheme + '://' + location.hostname + ':' + port;
+    const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = wsScheme + '://' + location.host + '/plugins/signalk-onvif-camera/ws';
     this.ws = new WebSocket(url);
     this.ws.onopen = function () {
       console.log('WebSocket connection established.');
@@ -325,7 +306,7 @@
         this.mjpegUrl = location.origin + data.result.mjpegUrl;
       }
       if (data.result.snapshotUrl) {
-        this.snapshotUrl = httpScheme + '://' + location.hostname + ':' + port + data.result.snapshotUrl;
+        this.snapshotUrl = location.origin + data.result.snapshotUrl;
       }
 
       this.showConnectedDeviceInfo(this.selected_address, data.result);

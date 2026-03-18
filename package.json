@@ -26,8 +26,7 @@
   "author": "Karl-Erik Gustafsson",
   "license": "MIT",
   "dependencies": {
-    "selfsigned": "^2.4.1",
-    "websocket": "^1.0.34",
+    "ws": "^8.0.0",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {

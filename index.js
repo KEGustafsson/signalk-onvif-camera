@@ -26,14 +26,9 @@ SOFTWARE.
 process.chdir(__dirname);
 
 const onvif = require('./lib/node-onvif.js');
-const WebSocketServer = require('websocket').server;
-const https = require('https');
-const http = require('http');
+const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const crypto = require('crypto');
-const selfsigned = require('selfsigned');
 const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/validation');
 
 module.exports = function createPlugin(app) {
@@ -44,13 +39,9 @@ module.exports = function createPlugin(app) {
   const setStatus = app.setPluginStatus || app.setProviderStatus;
 
   let ipAddress;
-  let port;
-  let secure;
   let wsServer;
-  let webServer;
   let userName;
   let password;
-  let certStatus = false;
   let startServer;
   let autoDiscoveryInterval;
   let autoDiscoveryTimer = null;
@@ -66,8 +57,6 @@ module.exports = function createPlugin(app) {
     userName = options.userName;
     password = options.password;
     ipAddress = options.ipAddress;
-    port = options.port;
-    secure = options.secure;
     autoDiscoveryInterval = options.autoDiscoveryInterval || 0;
     snapshotInterval = options.snapshotInterval || 100;
     enableSignalKIntegration = options.enableSignalKIntegration || false;
@@ -93,135 +82,47 @@ module.exports = function createPlugin(app) {
       });
     }
 
-    const browserData = [{
-      'secure': secure,
-      'port': port,
-      'snapshotInterval': snapshotInterval
-    }];
+    const browserData = [{ 'snapshotInterval': snapshotInterval }];
     fs.writeFileSync(path.join(__dirname, 'public/browserdata.json'), JSON.stringify(browserData));
 
-    // Register MJPEG endpoint on SignalK's Express app so it is reachable
-    // through the same reverse proxy as the SignalK server itself.
-    if (typeof app.get === 'function') {
+    // Register HTTP endpoints on SignalK's Express app (only once across restarts)
+    if (!plugin._routesRegistered && typeof app.get === 'function') {
       app.get('/plugins/signalk-onvif-camera/mjpeg', (req, res) => {
-        const query = require('url').parse(req.url, true).query;
-        handleMjpegStream(req, res, query);
+        handleMjpegStream(req, res, req.query);
       });
+      app.get('/plugins/signalk-onvif-camera/snapshot', (req, res) => {
+        handleSnapshotRequest(req, res, req.query);
+      });
+      app.get('/plugins/signalk-onvif-camera/api/streams', (req, res) => {
+        handleStreamInfoRequest(req, res, req.query);
+      });
+      app.get('/plugins/signalk-onvif-camera/api/profiles', (req, res) => {
+        handleProfilesRequest(req, res, req.query);
+      });
+      plugin._routesRegistered = true;
     }
 
-    // Certificate paths - only initialized when secure mode is enabled
-    let certDir;
-    let certKeyPath;
-    let certFilePath;
-
-    if (secure) {
-      try {
-        // Use Signal K data directory for persistent certificate storage
-        certDir = path.join(app.getDataDirPath(), 'cert');
-        certKeyPath = path.join(certDir, 'tls.key');
-        certFilePath = path.join(certDir, 'tls.cert');
-
-        // Check if certificate is expired or will expire within 7 days
-        const isCertificateExpired = function (certPath) {
-          try {
-            const certPem = fs.readFileSync(certPath, 'utf8');
-            const cert = new crypto.X509Certificate(certPem);
-            const expiryDate = new Date(cert.validTo);
-            const now = new Date();
-            const sevenDaysFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-            return expiryDate <= sevenDaysFromNow;
-          } catch (error) {
-            app.debug(`Error checking certificate expiry: ${error.message}`);
-            return true; // If we can't read it, regenerate
-          }
-        };
-
-        // Generate new SSL certificate
-        const generateCertificate = function () {
-          fs.mkdirSync(certDir, { recursive: true });
-          const attrs = [{ name: 'commonName', value: 'localhost' }];
-          const pems = selfsigned.generate(attrs, {
-            days: 365,
-            keySize: 2048,
-            algorithm: 'sha256'
-          });
-          fs.writeFileSync(certKeyPath, pems.private);
-          fs.writeFileSync(certFilePath, pems.cert);
-          app.debug(`SSL certificates generated and stored in ${certDir}`);
-        };
-
-        const certExists = fs.existsSync(certFilePath) && fs.existsSync(certKeyPath);
-
-        if (!certExists) {
-          app.debug('SSL certificates not found, generating new certificates...');
-          generateCertificate();
-          certStatus = true;
-        } else if (isCertificateExpired(certFilePath)) {
-          app.debug('SSL certificate expired or expiring soon, regenerating...');
-          generateCertificate();
-          certStatus = true;
-        } else {
-          app.debug('SSL certificates found and valid');
-          certStatus = true;
-        }
-      } catch (error) {
-        console.error('Failed to setup SSL certificate:', error.message);
-        setStatus('Certificate setup failed. Server cannot start in secure mode.');
-        certStatus = false;
-        return; // Don't start server if certificate setup failed
-      }
+    // Attach WebSocket server to SignalK's HTTP server
+    if (app.server) {
+      wsServer = new WebSocket.Server({
+        server: app.server,
+        path: '/plugins/signalk-onvif-camera/ws'
+      });
+      wsServer.on('connection', wsServerConnection);
+      app.debug('Onvif Camera WebSocket server attached to SignalK server');
+    } else {
+      console.error('SignalK app.server not available - WebSocket disabled');
     }
 
-    startServer = setInterval(() => {
-      if (secure) {
-        if (certStatus) {
-          certStatus = false;
-          clearInterval(startServer);
-          const httpsSec = {
-            key: fs.readFileSync(certKeyPath),
-            cert: fs.readFileSync(certFilePath)
-          };
-          webServer = https.createServer(httpsSec, httpServerRequest);
-          webServer.listen(port, () => {
-            console.log(`Onvif Camera https/wss server running at 0.0.0.0:${port}`);
-          });
-          wsServer = new WebSocketServer({
-            httpServer: webServer
-          });
-          wsServer.on('request', wsServerRequest);
+    // Start auto-discovery timer if configured
+    if (autoDiscoveryInterval > 0) {
+      setupAutoDiscovery();
+    }
 
-          // Start auto-discovery timer if configured
-          if (autoDiscoveryInterval > 0) {
-            setupAutoDiscovery();
-          }
-
-          // Run startup discovery if enabled
-          if (discoverOnStart) {
-            runStartupDiscovery();
-          }
-        }
-      } else {
-        clearInterval(startServer);
-        webServer = http.createServer(httpServerRequest);
-        webServer.listen(port, () => {
-          console.log(`Onvif Camera http/ws server running at 0.0.0.0:${port}`);
-        });
-        wsServer = new WebSocketServer({
-          httpServer: webServer
-        });
-        wsServer.on('request', wsServerRequest);
-
-        // Start auto-discovery timer if configured
-        if (autoDiscoveryInterval > 0) {
-          setupAutoDiscovery();
-        }
-
-        // Run startup discovery if enabled
-        if (discoverOnStart) {
-          runStartupDiscovery();
-        }
-      }
-    }, 1000);
+    // Run startup discovery if enabled
+    if (discoverOnStart) {
+      runStartupDiscovery();
+    }
   };
 
   // Setup automatic periodic discovery
@@ -337,7 +238,6 @@ module.exports = function createPlugin(app) {
   }
 
   plugin.stop = function stop() {
-    clearInterval(startServer);
     if (autoDiscoveryTimer) {
       clearInterval(autoDiscoveryTimer);
       autoDiscoveryTimer = null;
@@ -354,11 +254,11 @@ module.exports = function createPlugin(app) {
     });
     mjpegStreams.clear();
 
-    if (webServer) {
-      wsServer.shutDown();
-      webServer.close(() => {
-        app.debug('Onvif Camera server closed');
+    if (wsServer) {
+      wsServer.close(() => {
+        app.debug('Onvif Camera WebSocket server closed');
       });
+      wsServer = null;
     }
   };
 
@@ -377,15 +277,6 @@ module.exports = function createPlugin(app) {
       ipAddress: {
         type: 'string',
         title: 'IP address of LAN, where ONVIF devices are located. Default, leave empty.'
-      },
-      port: {
-        type: 'number',
-        title: 'Server port number',
-        default: 8880
-      },
-      secure: {
-        type: 'boolean',
-        title: 'Use https/wss instead of http/ws'
       },
       userName: {
         type: 'string',
@@ -463,55 +354,6 @@ module.exports = function createPlugin(app) {
       }
     }
   };
-
-  function httpServerRequest(req, res) {
-    const urlParts = require('url').parse(req.url, true);
-    let reqPath = urlParts.pathname;
-
-    // Handle MJPEG streaming endpoint
-    if (reqPath === '/mjpeg') {
-      handleMjpegStream(req, res, urlParts.query);
-      return;
-    }
-
-    // Handle snapshot endpoint for direct HTTP access
-    if (reqPath === '/snapshot') {
-      handleSnapshotRequest(req, res, urlParts.query);
-      return;
-    }
-
-    // Handle stream info endpoint
-    if (reqPath === '/api/streams') {
-      handleStreamInfoRequest(req, res, urlParts.query);
-      return;
-    }
-
-    // Handle profiles endpoint
-    if (reqPath === '/api/profiles') {
-      handleProfilesRequest(req, res, urlParts.query);
-      return;
-    }
-
-    if (reqPath.match(/\.{2,}/) || reqPath.match(/[^a-zA-Z\d_\-./]/)) {
-      httpServerResponse404(req.url, res);
-      return;
-    }
-    if (reqPath === '/') {
-      reqPath = '/index.html';
-    }
-    const fpath = './public' + reqPath;
-    fs.readFile(fpath, 'utf-8', function (err, data) {
-      if (err) {
-        httpServerResponse404(req.url, res);
-        return;
-      } else {
-        const ctype = getContentType(fpath);
-        res.writeHead(200, { 'Content-Type': ctype });
-        res.write(data);
-        res.end();
-      }
-    });
-  }
 
   // MJPEG streaming handler
   function handleMjpegStream(req, res, query) {
@@ -700,51 +542,10 @@ module.exports = function createPlugin(app) {
     }));
   }
 
-  function getContentType(fpath) {
-    const ext = fpath.split('.').pop().toLowerCase();
-    if (ext.match(/^(html|htm)$/)) {
-      return 'text/html';
-    } else if (ext.match(/^(jpeg|jpg)$/)) {
-      return 'image/jpeg';
-    } else if (ext.match(/^(png|gif)$/)) {
-      return 'image/' + ext;
-    } else if (ext === 'css') {
-      return 'text/css';
-    } else if (ext === 'js') {
-      return 'text/javascript';
-    } else if (ext === 'json') {
-      return 'application/json';
-    } else if (ext === 'woff2') {
-      return 'application/font-woff';
-    } else if (ext === 'woff') {
-      return 'application/font-woff';
-    } else if (ext === 'ttf') {
-      return 'application/font-ttf';
-    } else if (ext === 'svg') {
-      return 'image/svg+xml';
-    } else if (ext === 'eot') {
-      return 'application/vnd.ms-fontobject';
-    } else if (ext === 'oft') {
-      return 'application/x-font-otf';
-    } else {
-      return 'application/octet-stream';
-    }
-  }
-
-  function httpServerResponse404(url, res) {
-    res.write('404 Not Found: ' + url);
-    res.end();
-    app.debug('HTTP : 404 Not Found : ' + url);
-  }
-
-  function wsServerRequest(request) {
-    const conn = request.accept(null, request.origin);
+  function wsServerConnection(conn) {
     conn.on('message', function (message) {
-      if (message.type !== 'utf8') {
-        return;
-      }
       try {
-        const data = JSON.parse(message.utf8Data);
+        const data = JSON.parse(message.toString());
         const method = data['method'];
         const params = data['params'];
         if (method === 'startDiscovery') {
@@ -770,13 +571,13 @@ module.exports = function createPlugin(app) {
         }
       } catch (error) {
         console.error('Invalid JSON received from WebSocket:', error.message);
-        if (conn.connected) {
+        if (conn.readyState === WebSocket.OPEN) {
           conn.send(JSON.stringify({ error: 'Invalid JSON format' }));
         }
       }
     });
 
-    conn.on('close', function (_message) {});
+    conn.on('close', function () {});
     conn.on('error', function (error) {
       console.error('WebSocket error:', error);
     });
@@ -807,7 +608,7 @@ module.exports = function createPlugin(app) {
           };
         }
         const res = { id: 'startDiscovery', result: devs };
-        if (conn.connected) conn.send(JSON.stringify(res));
+        if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       })
       .catch((error) => {
         // If discovery is in progress, return cached devices if available
@@ -821,7 +622,7 @@ module.exports = function createPlugin(app) {
             };
           }
           const res = { id: 'startDiscovery', result: devs };
-          if (conn.connected) conn.send(JSON.stringify(res));
+          if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
         } else if (error.message === 'Discovery already in progress') {
           // No cached devices, wait and retry once
           app.debug('Discovery in progress, waiting to retry...');
@@ -830,7 +631,7 @@ module.exports = function createPlugin(app) {
           }, 3000);
         } else {
           const res = { id: 'startDiscovery', error: error.message };
-          if (conn.connected) conn.send(JSON.stringify(res));
+          if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
         }
       });
   }
@@ -844,7 +645,7 @@ module.exports = function createPlugin(app) {
         id: 'connect',
         error: error.message
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -854,7 +655,7 @@ module.exports = function createPlugin(app) {
         id: 'connect',
         error: 'The specified device is not found: ' + params.address
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -886,7 +687,7 @@ module.exports = function createPlugin(app) {
           ...result,
           streams: currentProfile ? currentProfile.stream : null,
           mjpegUrl: `/plugins/signalk-onvif-camera/mjpeg?address=${encodeURIComponent(params.address)}`,
-          snapshotUrl: `/snapshot?address=${encodeURIComponent(params.address)}`
+          snapshotUrl: `/plugins/signalk-onvif-camera/snapshot?address=${encodeURIComponent(params.address)}`
         };
 
         // Publish to Signal K if enabled
@@ -894,7 +695,7 @@ module.exports = function createPlugin(app) {
           publishCameraToSignalK(params.address, result);
         }
       }
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     });
   }
 
@@ -904,14 +705,14 @@ module.exports = function createPlugin(app) {
       validateDeviceAddress(params.address);
     } catch (error) {
       const res = { id: 'getProfiles', error: error.message };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
     const device = devices[params.address];
     if (!device) {
       const res = { id: 'getProfiles', error: 'Device not found' };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -935,7 +736,7 @@ module.exports = function createPlugin(app) {
         current: currentProfile ? currentProfile.token : null
       }
     };
-    if (conn.connected) conn.send(JSON.stringify(res));
+    if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
   }
 
   // Change the active profile for a device
@@ -944,14 +745,14 @@ module.exports = function createPlugin(app) {
       validateDeviceAddress(params.address);
     } catch (error) {
       const res = { id: 'changeProfile', error: error.message };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
     const device = devices[params.address];
     if (!device) {
       const res = { id: 'changeProfile', error: 'Device not found' };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -976,11 +777,11 @@ module.exports = function createPlugin(app) {
           video: newProfile.video
         }
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     } else {
       app.debug(`Profile change failed - profile not found: ${profileToken}`);
       const res = { id: 'changeProfile', error: 'Profile not found: ' + profileToken };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     }
   }
 
@@ -990,21 +791,21 @@ module.exports = function createPlugin(app) {
       validateDeviceAddress(params.address);
     } catch (error) {
       const res = { id: 'getStreams', error: error.message };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
     const device = devices[params.address];
     if (!device) {
       const res = { id: 'getStreams', error: 'Device not found' };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
     const currentProfile = device.getCurrentProfile();
     if (!currentProfile) {
       const res = { id: 'getStreams', error: 'No profile selected' };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1016,10 +817,10 @@ module.exports = function createPlugin(app) {
         http: currentProfile.stream.http,
         udp: currentProfile.stream.udp,
         snapshot: currentProfile.snapshot,
-        mjpeg: `/mjpeg?address=${encodeURIComponent(params.address)}`
+        mjpeg: `/plugins/signalk-onvif-camera/mjpeg?address=${encodeURIComponent(params.address)}`
       }
     };
-    if (conn.connected) conn.send(JSON.stringify(res));
+    if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
   }
 
   // Get detailed device info
@@ -1028,14 +829,14 @@ module.exports = function createPlugin(app) {
       validateDeviceAddress(params.address);
     } catch (error) {
       const res = { id: 'getDeviceInfo', error: error.message };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
     const device = devices[params.address];
     if (!device) {
       const res = { id: 'getDeviceInfo', error: 'Device not found' };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1058,7 +859,7 @@ module.exports = function createPlugin(app) {
         } : null
       }
     };
-    if (conn.connected) conn.send(JSON.stringify(res));
+    if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
   }
 
   // Get nickname for a camera address
@@ -1071,20 +872,6 @@ module.exports = function createPlugin(app) {
     return address.replace(/\./g, '_');
   }
 
-  // Get server's local IP address for constructing full URLs
-  function getServerIP() {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name]) {
-        // Skip internal (loopback) and non-IPv4 addresses
-        if (iface.family === 'IPv4' && !iface.internal) {
-          return iface.address;
-        }
-      }
-    }
-    return 'localhost';
-  }
-
   // Publish camera info to Signal K with nested values
   function publishCameraToSignalK(address, deviceInfo) {
     if (!app.handleMessage) return;
@@ -1092,19 +879,14 @@ module.exports = function createPlugin(app) {
     const nickname = getCameraNickname(address);
     const basePath = `sensors.camera.${nickname}`;
 
-    // Build full URLs for snapshot and MJPEG
-    const protocol = secure ? 'https' : 'http';
-    const serverIP = getServerIP();
-    const baseUrl = `${protocol}://${serverIP}:${port}`;
-
     // Build nested value object with only snapshot and MJPEG paths
     const cameraData = {
       manufacturer: deviceInfo.Manufacturer || 'Unknown',
       model: deviceInfo.Model || 'Unknown',
       address: address,
       connected: true,
-      snapshot: `${baseUrl}/snapshot?address=${encodeURIComponent(address)}`,
-      mjpeg: `${baseUrl}/mjpeg?address=${encodeURIComponent(address)}`
+      snapshot: `/plugins/signalk-onvif-camera/snapshot?address=${encodeURIComponent(address)}`,
+      mjpeg: `/plugins/signalk-onvif-camera/mjpeg?address=${encodeURIComponent(address)}`
     };
 
     const delta = {
@@ -1129,7 +911,7 @@ module.exports = function createPlugin(app) {
         id: 'fetchSnapshot',
         error: error.message
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1139,7 +921,7 @@ module.exports = function createPlugin(app) {
         id: 'fetchSnapshot',
         error: 'The specified device is not found: ' + params.address
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1165,7 +947,7 @@ module.exports = function createPlugin(app) {
         const uri = 'data:' + ct + ';base64,' + b64;
         res['result'] = uri;
       }
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     });
   }
 
@@ -1177,7 +959,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzMove',
         error: error.message
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1187,7 +969,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzMove',
         error: 'The specified device is not found: ' + params.address
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
     device.ptzMove(params, (error) => {
@@ -1197,7 +979,7 @@ module.exports = function createPlugin(app) {
       } else {
         res['result'] = true;
       }
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     });
   }
 
@@ -1209,7 +991,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzStop',
         error: error.message
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1219,7 +1001,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzStop',
         error: 'The specified device is not found: ' + params.address
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
     device.ptzStop((error) => {
@@ -1229,7 +1011,7 @@ module.exports = function createPlugin(app) {
       } else {
         res['result'] = true;
       }
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     });
   }
 
@@ -1241,7 +1023,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzHome',
         error: error.message
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1251,7 +1033,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzHome',
         error: 'The specified device is not found: ' + params.address
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
     if (!device.services.ptz) {
@@ -1259,7 +1041,7 @@ module.exports = function createPlugin(app) {
         id: 'ptzHome',
         error: 'The specified device does not support PTZ.'
       };
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
       return;
     }
 
@@ -1276,7 +1058,7 @@ module.exports = function createPlugin(app) {
       } else {
         res['result'] = true;
       }
-      if (conn.connected) conn.send(JSON.stringify(res));
+      if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
     });
   }
 
