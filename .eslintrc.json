@@ -9,7 +9,7 @@
   "extends": "eslint:recommended",
   "parserOptions": {
     "ecmaVersion": 2018,
-    "sourceType": "module"
+    "sourceType": "commonjs"
   },
   "globals": {
     "img_w": "writable",
@@ -33,11 +33,13 @@
       "anonymous": "always",
       "named": "never",
       "asyncArrow": "always"
-    }]
+    }],
+    "no-empty": ["error", { "allowEmptyCatch": true }]
   },
   "ignorePatterns": [
     "node_modules/",
     "public/",
-    "cert/"
+    "cert/",
+    "vite.config.js"
   ]
 }

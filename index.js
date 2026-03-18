@@ -51,6 +51,7 @@ module.exports = function createPlugin(app) {
   let startupDiscoveryDelay;
   let cameraConfigs = {};
   const mjpegStreams = new Map(); // Track active MJPEG streams
+  const MAX_MJPEG_STREAMS = 10;
 
   plugin.start = function (options, _restartPlugin) {
     userName = options.userName;
@@ -91,6 +92,10 @@ module.exports = function createPlugin(app) {
     // Register HTTP endpoints on SignalK's Express app (only once across restarts)
     if (!plugin._routesRegistered && typeof app.get === 'function') {
       app.get('/plugins/signalk-onvif-camera/mjpeg', (req, res) => {
+        if (mjpegStreams.size >= MAX_MJPEG_STREAMS) {
+          res.status(503).json({ error: 'Too many active streams' });
+          return;
+        }
         handleMjpegStream(req, res, req.query);
       });
       app.get('/plugins/signalk-onvif-camera/snapshot', (req, res) => {
@@ -258,6 +263,9 @@ module.exports = function createPlugin(app) {
   }
 
   plugin.stop = function stop() {
+    devices = {};
+    deviceNames = {};
+
     if (autoDiscoveryTimer) {
       clearInterval(autoDiscoveryTimer);
       autoDiscoveryTimer = null;
