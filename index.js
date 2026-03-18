@@ -23,7 +23,6 @@ SOFTWARE.
 */
 
 'use strict';
-process.chdir(__dirname);
 
 const onvif = require('./lib/node-onvif.js');
 const WebSocket = require('ws');
@@ -70,7 +69,10 @@ module.exports = function createPlugin(app) {
         if (cam.address) {
           // Sanitize nickname for Signal K path (alphanumeric and underscore only)
           const rawNickname = cam.nickname || cam.name || cam.address;
-          const sanitizedNickname = rawNickname.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+          let sanitizedNickname = rawNickname.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+          if (!/[a-z0-9]/.test(sanitizedNickname)) {
+            sanitizedNickname = 'camera_' + cam.address.replace(/\./g, '_');
+          }
 
           cameraConfigs[cam.address] = {
             name: cam.name || cam.address,
@@ -467,14 +469,24 @@ module.exports = function createPlugin(app) {
       res.socket.setNoDelay(true);
     }
 
+    const FRAME_TIMEOUT_MS = 10000;
     const streamId = `${address}-${++mjpegStreamCounter}`;
     let isActive = true;
 
     const sendFrame = () => {
       if (!isActive) return;
 
+      let frameTimedOut = false;
+      const frameTimer = setTimeout(() => {
+        frameTimedOut = true;
+        isActive = false;
+        mjpegStreams.delete(streamId);
+        try { res.end(); } catch (_e) {}
+      }, FRAME_TIMEOUT_MS);
+
       device.fetchSnapshot((error, result) => {
-        if (!isActive) return;
+        clearTimeout(frameTimer);
+        if (frameTimedOut || !isActive) return;
 
         if (!error && result && result.body && result.body.length > 0) {
           const frame = result.body;
@@ -696,14 +708,15 @@ module.exports = function createPlugin(app) {
 
   let devices = {};
   let deviceNames = {};
-  function startDiscovery(conn, retryCount = 0) {
-    const MAX_RETRIES = 2;
+  // Shared retry state: all clients that arrive while a probe is running
+  // queue here rather than each scheduling their own independent timer.
+  let discoveryRetryTimer = null;
+  let discoveryPendingConns = [];
+
+  function startDiscovery(conn) {
     onvif
       .startProbe(ipAddress)
       .then((device_list) => {
-        // Merge newly found devices into the map rather than clearing it.
-        // Clearing would drop references held by active MJPEG streams or
-        // ongoing connect() calls, breaking them mid-flight.
         device_list.forEach((device) => {
           const odevice = new onvif.OnvifDevice({
             xaddr: device.xaddrs[0]
@@ -722,11 +735,21 @@ module.exports = function createPlugin(app) {
           };
         }
         const res = { id: 'startDiscovery', result: devs };
-        if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
+        // Notify this caller and any clients that were waiting for retry
+        const allConns = [conn, ...discoveryPendingConns];
+        discoveryPendingConns = [];
+        if (discoveryRetryTimer) {
+          clearTimeout(discoveryRetryTimer);
+          discoveryRetryTimer = null;
+        }
+        allConns.forEach((c) => {
+          if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(res));
+        });
       })
       .catch((error) => {
+        const inProgress = onvif._probeInProgress;
         // If discovery is in progress, return cached devices if available
-        if (error.message === 'Discovery already in progress' && Object.keys(devices).length > 0) {
+        if (inProgress && Object.keys(devices).length > 0) {
           app.debug('Discovery in progress, returning cached devices');
           const devs = {};
           for (const addr in devices) {
@@ -737,12 +760,21 @@ module.exports = function createPlugin(app) {
           }
           const res = { id: 'startDiscovery', result: devs };
           if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
-        } else if (error.message === 'Discovery already in progress' && retryCount < MAX_RETRIES) {
-          // No cached devices yet; retry a limited number of times
-          app.debug(`Discovery in progress, retry ${retryCount + 1}/${MAX_RETRIES}...`);
-          setTimeout(() => {
-            startDiscovery(conn, retryCount + 1);
-          }, 3000);
+        } else if (inProgress) {
+          // No cached devices yet — queue this client behind one shared retry timer
+          discoveryPendingConns.push(conn);
+          if (!discoveryRetryTimer) {
+            app.debug('Discovery in progress, scheduling shared retry...');
+            discoveryRetryTimer = setTimeout(() => {
+              discoveryRetryTimer = null;
+              const pending = discoveryPendingConns.splice(0);
+              if (pending.length > 0) {
+                // Use the first pending conn to drive the retry; others are notified via allConns above
+                discoveryPendingConns = pending.slice(1);
+                startDiscovery(pending[0]);
+              }
+            }, 3000);
+          }
         } else {
           const res = { id: 'startDiscovery', error: error.message };
           if (conn.readyState === WebSocket.OPEN) conn.send(JSON.stringify(res));
