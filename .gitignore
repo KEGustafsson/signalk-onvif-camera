@@ -4,3 +4,4 @@ coverage
 .eslintcache
 cert
 .claude
+package-lock.json

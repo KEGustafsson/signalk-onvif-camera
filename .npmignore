@@ -6,6 +6,5 @@ coverage
 .eslintrc.json
 .editorconfig
 .gitignore
-.npmignore
 jest.config.js
 vite.config.js

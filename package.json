@@ -23,7 +23,7 @@
     "preview": "vite preview"
   },
   "signalk": {
-    "appIcon": "./public/icons/icon-72x72.png",
+    "appIcon": "./icons/icon-72x72.png",
     "displayName": "Signalk-onvif-camera"
   },
   "keywords": [
