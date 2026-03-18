@@ -2,7 +2,12 @@
   let snapshotInterval = 100;
 
   readTextFile('browserdata.json', function (text){
-    const browserData = JSON.parse(text);
+    let browserData;
+    try {
+      browserData = JSON.parse(text);
+    } catch (_e) {
+      browserData = [{}];
+    }
     snapshotInterval = browserData[0].snapshotInterval || 100;
     $(document).ready(function () {
       new OnvifManager().init();
@@ -58,6 +63,7 @@
     this.selected_address = '';
     this.device_connected = false;
     this.ptz_moving = false;
+    this._snapshotTimer = null;
     this.snapshot_w = 400;
     this.snapshot_h = 300;
     this.stream_mode = 'snapshot'; // 'snapshot' or 'mjpeg'
@@ -166,7 +172,12 @@
       );
     }.bind(this);
     this.ws.onmessage = function (res) {
-      const data = JSON.parse(res.data);
+      let data;
+      try {
+        data = JSON.parse(res.data);
+      } catch (_e) {
+        return;
+      }
       const id = data.id;
       if (id === 'startDiscovery') {
         this.startDiscoveryCallback(data);
@@ -204,10 +215,17 @@
     // Stop MJPEG stream if active
     this.stopMjpegStream();
 
+    // Cancel any pending snapshot timer
+    if (this._snapshotTimer !== null) {
+      clearTimeout(this._snapshotTimer);
+      this._snapshotTimer = null;
+    }
+
     this.el['img_snp'].removeAttr('src');
     this.el['div_pnl'].hide();
     this.el['frm_con'].show();
     this.device_connected = false;
+    this.ptz_moving = false;
     this.disabledLoginForm(false);
     this.el['btn_con'].text('Connect');
 
@@ -416,8 +434,9 @@
       if (this.stream_mode === 'snapshot') {
         this.el['img_snp'].attr('src', data.result);
       }
-      window.setTimeout(
+      this._snapshotTimer = window.setTimeout(
         function () {
+          this._snapshotTimer = null;
           const imgEl = this.el['img_snp'].get(0);
           if (imgEl) {
             this.snapshot_w = imgEl.naturalWidth || 400;
@@ -436,7 +455,7 @@
       console.error(data.error);
       // Retry after error with a longer delay
       if (this.device_connected === true && this.stream_mode === 'snapshot') {
-        window.setTimeout(this.fetchSnapshot.bind(this), 1000);
+        this._snapshotTimer = window.setTimeout(this.fetchSnapshot.bind(this), 1000);
       }
     }
   };
@@ -564,6 +583,6 @@
   };
 
   OnvifManager.prototype.ptzHomeCallback = function (_data) {
-    // do nothing
+    this.ptz_moving = false;
   };
 })();
