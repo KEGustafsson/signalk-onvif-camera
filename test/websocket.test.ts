@@ -256,6 +256,17 @@ describe('WebSocket message handling', () => {
     });
   });
 
+  describe('ping', () => {
+    test('responds with pong for heartbeat requests', () => {
+      const socket = connectSocket();
+      sendMessage(socket, { method: 'ping' });
+      expect(lastSent(socket)).toEqual({
+        id: 'ping',
+        result: 'pong'
+      });
+    });
+  });
+
   describe('socket lifecycle', () => {
     test('close event should not throw', () => {
       const socket = connectSocket();
@@ -448,6 +459,29 @@ describe('WebSocket message handling', () => {
       expect(device.fetchSnapshotForProfile).toHaveBeenCalledWith('profile-1', expect.any(Function));
       expect(device.changeProfile).not.toHaveBeenCalled();
       expect(lastSent(socket).id).toBe('fetchSnapshot');
+    });
+
+    test('echoes the snapshot request id in the websocket response', async () => {
+      const socket = connectSocket();
+      mockStartProbe.mockResolvedValue([{
+        xaddrs: ['http://10.0.0.23/onvif/device_service'],
+        name: 'Camera'
+      }]);
+
+      sendMessage(socket, { method: 'startDiscovery' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      sendMessage(socket, {
+        method: 'fetchSnapshot',
+        params: {
+          address: '10.0.0.23',
+          requestId: 'snapshot-req-23'
+        }
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+      const resp = lastSent(socket);
+      expect(resp.id).toBe('fetchSnapshot');
+      expect(resp.requestId).toBe('snapshot-req-23');
     });
   });
 

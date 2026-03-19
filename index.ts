@@ -153,6 +153,7 @@ interface HttpResponseLike {
 
 type WsMethodId =
   | 'startDiscovery'
+  | 'ping'
   | 'connect'
   | 'fetchSnapshot'
   | 'ptzMove'
@@ -165,6 +166,7 @@ type WsMethodId =
 
 interface WsResponse<TResult = unknown> {
   id: WsMethodId;
+  requestId?: string;
   result?: TResult;
   error?: string;
 }
@@ -233,6 +235,7 @@ interface ChangeProfileParams {
 interface FetchSnapshotParams {
   address?: unknown;
   profile?: unknown;
+  requestId?: unknown;
 }
 
 interface PtzMoveParams extends UnknownRecord {
@@ -1116,6 +1119,8 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
         const params = isRecord(parsed.params) ? parsed.params : {};
         if (method === 'startDiscovery') {
           startDiscovery(conn);
+        } else if (method === 'ping') {
+          sendWsResponse(conn, { id: 'ping', result: 'pong' });
         } else if (method === 'connect') {
           connect(conn, params);
         } else if (method === 'fetchSnapshot') {
@@ -1521,11 +1526,13 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
   function fetchSnapshot(conn: WsSocket, params: UnknownRecord): void {
     const request = params as FetchSnapshotParams;
     const address = getStringValue(request.address);
+    const requestId = getStringValue(request.requestId);
     try {
       validateDeviceAddress(address);
     } catch (error) {
       sendWsResponse(conn, {
         id: 'fetchSnapshot',
+        requestId,
         error: getErrorMessage(error)
       });
       return;
@@ -1534,6 +1541,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     if (!address) {
       sendWsResponse(conn, {
         id: 'fetchSnapshot',
+        requestId,
         error: 'Device address is required'
       });
       return;
@@ -1543,6 +1551,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     if (!device) {
       sendWsResponse(conn, {
         id: 'fetchSnapshot',
+        requestId,
         error: 'The specified device is not found: ' + address
       });
       return;
@@ -1556,6 +1565,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     if (profileSelection !== undefined && !snapshotProfile) {
       sendWsResponse(conn, {
         id: 'fetchSnapshot',
+        requestId,
         error: 'Profile not found: ' + String(profileSelection)
       });
       return;
@@ -1568,7 +1578,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     }
 
     const fetchSnapshotCallback = (error: Error | null, result?: SnapshotResponse): void => {
-      const res: WsResponse<string> = { id: 'fetchSnapshot' };
+      const res: WsResponse<string> = { id: 'fetchSnapshot', requestId };
       if (error) {
         res.error = error.message || error.toString();
       } else if (!result || !result.body) {

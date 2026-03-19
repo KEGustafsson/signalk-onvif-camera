@@ -1,5 +1,13 @@
 import { $, DomCollection } from './dom';
+import { buildConnectRequest, hasSelectableAddress } from './connect';
 import { normalizePtzPadVector } from './ptz';
+import {
+  createSnapshotRequestId,
+  getNextSnapshotDelay,
+  getRemainingSnapshotDelay,
+  isExpectedSnapshotResponse,
+  normalizeSnapshotInterval
+} from './snapshot';
 
 (function () {
   let snapshotInterval = 100;
@@ -7,6 +15,7 @@ import { normalizePtzPadVector } from './ptz';
 
   type JsonRecord = Record<string, unknown>;
   type StreamMode = 'snapshot' | 'mjpeg';
+  type WsHeartbeatResult = 'pong';
 
   interface BrowserDataEntry {
     snapshotInterval?: number;
@@ -14,6 +23,7 @@ import { normalizePtzPadVector } from './ptz';
 
   interface ManagerResponse {
     id?: string;
+    requestId?: unknown;
     result?: unknown;
     error?: unknown;
   }
@@ -33,8 +43,6 @@ import { normalizePtzPadVector } from './ptz';
   interface ManagerElements {
     frm_con: DomCollection;
     sel_dev: DomCollection;
-    inp_usr: DomCollection;
-    inp_pas: DomCollection;
     btn_con: DomCollection;
     div_pnl: DomCollection;
     img_snp: DomCollection;
@@ -159,7 +167,7 @@ import { normalizePtzPadVector } from './ptz';
     } catch (_error) {
       browserData = [{}];
     }
-    snapshotInterval = browserData[0]?.snapshotInterval || 100;
+    snapshotInterval = normalizeSnapshotInterval(browserData[0]?.snapshotInterval);
     initializeManager();
   });
 
@@ -177,13 +185,18 @@ import { normalizePtzPadVector } from './ptz';
     private streams: StreamUrls | null = null;
     private mjpegUrl: string | null = null;
     private snapshotUrl: string | null = null;
+    private _reconnectTimer: number | null = null;
+    private _heartbeatTimer: number | null = null;
+    private _reconnectAttempts = 0;
+    private pendingConnectAddress: string | null = null;
+    private _snapshotRequestSequence = 0;
+    private _activeSnapshotRequestId: string | null = null;
+    private _activeSnapshotRequestedAt: number | null = null;
 
     constructor() {
       this.el = {
         frm_con: $('#connect-form'),
         sel_dev: $('#connect-form select[name="device"]'),
-        inp_usr: $('#connect-form input[name="user"]'),
-        inp_pas: $('#connect-form input[name="pass"]'),
         btn_con: $('#connect-form button[name="connect"]'),
         div_pnl: $('#connected-device'),
         img_snp: $('#connected-device img.snapshot'),
@@ -203,7 +216,7 @@ import { normalizePtzPadVector } from './ptz';
     }
 
     public init(): void {
-      this.initWebSocketConnection();
+      this.ensureWebSocketConnection();
       $(window).off('resize.onvif').on('resize.onvif', () => {
         window.requestAnimationFrame(() => {
           this.adjustSize();
@@ -292,28 +305,46 @@ import { normalizePtzPadVector } from './ptz';
     }
 
     private initWebSocketConnection(): void {
+      if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
       const wsScheme = location.protocol === 'https:' ? 'wss' : 'ws';
       const url = wsScheme + '://' + location.host + '/plugins/signalk-onvif-camera/ws';
-      this.ws = new WebSocket(url);
+      const socket = new WebSocket(url);
+      this.ws = socket;
 
-      this.ws.onopen = () => {
+      socket.onopen = () => {
+        if (this.ws !== socket) {
+          return;
+        }
         console.debug('WebSocket connection established.');
+        this.clearReconnectTimer();
+        this._reconnectAttempts = 0;
+        this.startHeartbeat();
+        if (!this.device_connected) {
+          this.el.btn_con.text('Connect');
+        }
+        if (this.selected_address) {
+          this.pendingConnectAddress = this.selected_address;
+        }
         this.sendRequest('startDiscovery');
       };
-      this.ws.onclose = (_event: CloseEvent) => {
+      socket.onclose = (_event: CloseEvent) => {
+        if (this.ws === socket) {
+          this.ws = null;
+        }
         console.debug('WebSocket connection closed.');
-        this.showMessageModal(
-          'Error',
-          'The WebSocket connection was closed. Check if the SignalK server and the ONVIF Camera plugin are running.'
-        );
+        this.stopHeartbeat();
+        this.scheduleReconnect();
       };
-      this.ws.onerror = (_event: Event) => {
-        this.showMessageModal(
-          'Error',
-          'Failed to establish a WebSocket connection. Check if the SignalK server and the ONVIF Camera plugin are running.'
-        );
+      socket.onerror = (_event: Event) => {
+        console.debug('WebSocket connection error.');
       };
-      this.ws.onmessage = (res: MessageEvent<string>) => {
+      socket.onmessage = (res: MessageEvent<string>) => {
+        if (this.ws !== socket) {
+          return;
+        }
         if(typeof res.data !== 'string') {
           return;
         }
@@ -339,14 +370,121 @@ import { normalizePtzPadVector } from './ptz';
           this.ptzHomeCallback(data);
         } else if (id === 'getStreams') {
           this.getStreamsCallback(data);
+        } else if (id === 'ping') {
+          const heartbeat = toStringValue(data.result as WsHeartbeatResult);
+          if (heartbeat !== 'pong') {
+            console.debug('Unexpected WebSocket heartbeat response:', heartbeat);
+          }
         }
       };
     }
 
-    private sendRequest(method: string, params?: JsonRecord): void {
+    private ensureWebSocketConnection(): void {
+      this.initWebSocketConnection();
+    }
+
+    private startHeartbeat(): void {
+      this.stopHeartbeat();
+      this._heartbeatTimer = window.setInterval(() => {
+        if (!this.sendRequest('ping')) {
+          this.stopHeartbeat();
+          this.scheduleReconnect();
+        }
+      }, 20000);
+    }
+
+    private stopHeartbeat(): void {
+      if (this._heartbeatTimer !== null) {
+        clearInterval(this._heartbeatTimer);
+        this._heartbeatTimer = null;
+      }
+    }
+
+    private clearSnapshotTimer(): void {
+      if (this._snapshotTimer !== null) {
+        clearTimeout(this._snapshotTimer);
+        this._snapshotTimer = null;
+      }
+    }
+
+    private clearActiveSnapshotRequest(): void {
+      this._activeSnapshotRequestId = null;
+      this._activeSnapshotRequestedAt = null;
+      const imageEl = this.el.img_snp.get(0) as HTMLImageElement | undefined;
+      if (imageEl) {
+        imageEl.onload = null;
+        imageEl.onerror = null;
+      }
+    }
+
+    private scheduleNextSnapshot(onBeforeFetch?: () => void): void {
+      const delay = getNextSnapshotDelay(snapshotInterval, this.device_connected, this.stream_mode);
+      this.scheduleSnapshotTimer(delay, onBeforeFetch);
+    }
+
+    private scheduleNextSnapshotAfterRequest(requestStartedAt: number, onBeforeFetch?: () => void): void {
+      const nextDelay = getNextSnapshotDelay(snapshotInterval, this.device_connected, this.stream_mode);
+      const delay = nextDelay === null
+        ? null
+        : getRemainingSnapshotDelay(nextDelay, requestStartedAt);
+      this.scheduleSnapshotTimer(delay, onBeforeFetch);
+    }
+
+    private scheduleSnapshotTimer(delay: number | null, onBeforeFetch?: () => void): void {
+      this.clearSnapshotTimer();
+      if (delay === null) {
+        return;
+      }
+
+      this._snapshotTimer = window.setTimeout(() => {
+        this._snapshotTimer = null;
+        if (onBeforeFetch) {
+          onBeforeFetch();
+        }
+        if (getNextSnapshotDelay(snapshotInterval, this.device_connected, this.stream_mode) !== null) {
+          this.fetchSnapshot();
+        }
+      }, delay);
+    }
+
+    private buildSnapshotRequestUrl(): string | null {
+      if (!this.snapshotUrl) {
+        return null;
+      }
+      const separator = this.snapshotUrl.includes('?') ? '&' : '?';
+      return this.snapshotUrl + separator + 't=' + Date.now();
+    }
+
+    private clearReconnectTimer(): void {
+      if (this._reconnectTimer !== null) {
+        clearTimeout(this._reconnectTimer);
+        this._reconnectTimer = null;
+      }
+    }
+
+    private scheduleReconnect(): void {
+      if (this._reconnectTimer !== null) {
+        return;
+      }
+
+      const delay = Math.min(1000 * (2 ** this._reconnectAttempts), 10000);
+      this._reconnectAttempts += 1;
+      if (!this.device_connected) {
+        this.disabledLoginForm(true);
+        this.el.btn_con.text('Reconnecting...');
+      }
+      this._reconnectTimer = window.setTimeout(() => {
+        this._reconnectTimer = null;
+        this.ensureWebSocketConnection();
+      }, delay);
+    }
+
+    private sendRequest(method: string, params?: JsonRecord): boolean {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ method, params }));
+        return true;
       }
+      return false;
     }
 
     private pressedConnectButton(_event: Event): void {
@@ -359,11 +497,8 @@ import { normalizePtzPadVector } from './ptz';
 
     private disconnectDevice(): void {
       this.stopMjpegStream();
-
-      if (this._snapshotTimer !== null) {
-        clearTimeout(this._snapshotTimer);
-        this._snapshotTimer = null;
-      }
+      this.clearSnapshotTimer();
+      this.clearActiveSnapshotRequest();
 
       this.el.img_snp.removeAttr('src');
       this.el.div_pnl.hide();
@@ -377,25 +512,34 @@ import { normalizePtzPadVector } from './ptz';
       this.streams = null;
       this.mjpegUrl = null;
       this.snapshotUrl = null;
+      this.pendingConnectAddress = null;
 
       $('input[name="stream-mode"][value="snapshot"]').prop('checked', true).parent().addClass('active');
       $('input[name="stream-mode"][value="mjpeg"]').parent().removeClass('active');
     }
 
     private connectDevice(): void {
+      const address = getElementValue(this.el.sel_dev);
+      if (!hasSelectableAddress(address)) {
+        this.showMessageModal('Error', 'Select a discovered device before connecting.');
+        return;
+      }
+
       this.disabledLoginForm(true);
       this.el.btn_con.text('Connecting...');
-      this.sendRequest('connect', {
-        address: getElementValue(this.el.sel_dev),
-        user: getElementValue(this.el.inp_usr),
-        pass: getElementValue(this.el.inp_pas)
-      });
+      this.pendingConnectAddress = address;
+      const sent = this.sendRequest(
+        'connect',
+        buildConnectRequest(address)
+      );
+      if (!sent) {
+        this.el.btn_con.text('Reconnecting...');
+        this.ensureWebSocketConnection();
+      }
     }
 
     private disabledLoginForm(disabled: boolean): void {
       this.el.sel_dev.prop('disabled', disabled);
-      this.el.inp_usr.prop('disabled', disabled);
-      this.el.inp_pas.prop('disabled', disabled);
       this.el.btn_con.prop('disabled', disabled);
     }
 
@@ -436,6 +580,24 @@ import { normalizePtzPadVector } from './ptz';
         this.el.sel_dev.val(currentSelection);
       }
 
+      const pendingAddress = this.pendingConnectAddress;
+      if (pendingAddress && devices[pendingAddress]) {
+        this.pendingConnectAddress = null;
+        this.el.sel_dev.val(pendingAddress);
+        this.disabledLoginForm(true);
+        this.el.btn_con.text('Connecting...');
+        this.sendRequest('connect', buildConnectRequest(pendingAddress));
+        return;
+      }
+
+      if (pendingAddress && count > 0) {
+        this.pendingConnectAddress = null;
+        this.disabledLoginForm(false);
+        this.el.btn_con.text('Connect');
+        this.showMessageModal('Error', 'The selected device is no longer available.');
+        return;
+      }
+
       if (count === 0) {
         this.showMessageModal(
           'Error',
@@ -443,6 +605,9 @@ import { normalizePtzPadVector } from './ptz';
         );
       } else {
         this.disabledLoginForm(false);
+        if (!this.device_connected) {
+          this.el.btn_con.text('Connect');
+        }
       }
     }
 
@@ -452,20 +617,24 @@ import { normalizePtzPadVector } from './ptz';
       const errorMessage = toStringValue(data.error);
 
       if (result) {
+        this.pendingConnectAddress = null;
         this.selected_address = getElementValue(this.el.sel_dev);
         this.streams = toStreamUrls(result['streams']);
         this.mjpegUrl = result['mjpegUrl'] ? location.origin + toStringValue(result['mjpegUrl']) : null;
         this.snapshotUrl = result['snapshotUrl'] ? location.origin + toStringValue(result['snapshotUrl']) : null;
-        this.showConnectedDeviceInfo(this.selected_address, result);
+        this.clearSnapshotTimer();
+        this.clearActiveSnapshotRequest();
         this.el.btn_con.text('Disconnect');
         this.el.frm_con.hide();
         this.el.div_pnl.show();
         this.device_connected = true;
+        this.showConnectedDeviceInfo(this.selected_address, result);
       } else if (errorMessage) {
+        this.pendingConnectAddress = null;
+        this.clearSnapshotTimer();
+        this.clearActiveSnapshotRequest();
         this.el.div_pnl.hide();
         this.el.sel_dev.prop('disabled', false);
-        this.el.inp_usr.prop('disabled', false);
-        this.el.inp_pas.prop('disabled', false);
         this.el.btn_con.text('Connect');
         this.el.frm_con.show();
         this.showMessageModal('Error', 'Failed to connect to the device. ' + errorMessage);
@@ -487,11 +656,12 @@ import { normalizePtzPadVector } from './ptz';
         return;
       }
 
-      const icon = button.querySelector('.icon');
+      const icon = button.querySelector('.glyphicon');
       const controlsHidden = connectedDevice.classList.toggle('controls-hidden');
       button.setAttribute('title', controlsHidden ? 'Show Controls' : 'Hide Controls');
       if (icon instanceof HTMLElement) {
-        icon.textContent = controlsHidden ? 'Show' : 'Hide';
+        icon.classList.toggle('glyphicon-eye-open', !controlsHidden);
+        icon.classList.toggle('glyphicon-eye-close', controlsHidden);
       }
     }
 
@@ -538,6 +708,8 @@ import { normalizePtzPadVector } from './ptz';
       const target = event.target instanceof HTMLInputElement ? event.target : null;
       const selectedMode = target ? String(target.value || 'snapshot') : 'snapshot';
       this.stream_mode = selectedMode === 'mjpeg' ? 'mjpeg' : 'snapshot';
+      this.clearSnapshotTimer();
+      this.clearActiveSnapshotRequest();
 
       if (this.stream_mode === 'mjpeg') {
         this.startMjpegStream();
@@ -597,12 +769,63 @@ import { normalizePtzPadVector } from './ptz';
     }
 
     private fetchSnapshot(): void {
+      const requestId = createSnapshotRequestId(this._snapshotRequestSequence, this.selected_address);
+      const requestStartedAt = Date.now();
+      this._snapshotRequestSequence += 1;
+      this.clearActiveSnapshotRequest();
+      this._activeSnapshotRequestId = requestId;
+      this._activeSnapshotRequestedAt = requestStartedAt;
+
+      const snapshotRequestUrl = this.buildSnapshotRequestUrl();
+      const imageEl = this.el.img_snp.get(0) as HTMLImageElement | undefined;
+      if (snapshotRequestUrl && imageEl) {
+        imageEl.onload = () => {
+          if (!isExpectedSnapshotResponse(this._activeSnapshotRequestId, requestId)) {
+            return;
+          }
+
+          this._activeSnapshotRequestId = null;
+          this._activeSnapshotRequestedAt = null;
+          if (!this.device_connected || this.stream_mode !== 'snapshot') {
+            return;
+          }
+
+          this.snapshot_w = imageEl.naturalWidth || 400;
+          this.snapshot_h = imageEl.naturalHeight || 300;
+          this.scheduleNextSnapshotAfterRequest(requestStartedAt, () => {
+            window.requestAnimationFrame(() => {
+              this.adjustSize();
+            });
+          });
+        };
+        imageEl.onerror = () => {
+          if (!isExpectedSnapshotResponse(this._activeSnapshotRequestId, requestId)) {
+            return;
+          }
+
+          this._activeSnapshotRequestId = null;
+          this._activeSnapshotRequestedAt = null;
+          console.error('Failed to load snapshot image.');
+          this.scheduleNextSnapshotAfterRequest(requestStartedAt);
+        };
+        imageEl.src = snapshotRequestUrl;
+        return;
+      }
+
       this.sendRequest('fetchSnapshot', {
-        address: this.selected_address
+        address: this.selected_address,
+        requestId
       });
     }
 
     private fetchSnapshotCallback(data: ManagerResponse): void {
+      if (!isExpectedSnapshotResponse(this._activeSnapshotRequestId, data.requestId)) {
+        return;
+      }
+
+      const requestStartedAt = this._activeSnapshotRequestedAt ?? Date.now();
+      this._activeSnapshotRequestId = null;
+      this._activeSnapshotRequestedAt = null;
       const resultUrl = toStringValue(data.result);
       const errorMessage = toStringValue(data.error);
 
@@ -614,8 +837,7 @@ import { normalizePtzPadVector } from './ptz';
         if (this.stream_mode === 'snapshot') {
           this.el.img_snp.attr('src', resultUrl);
         }
-        this._snapshotTimer = window.setTimeout(() => {
-          this._snapshotTimer = null;
+        this.scheduleNextSnapshotAfterRequest(requestStartedAt, () => {
           const imageEl = this.el.img_snp.get(0) as HTMLImageElement | undefined;
           if (imageEl) {
             this.snapshot_w = imageEl.naturalWidth || 400;
@@ -624,17 +846,10 @@ import { normalizePtzPadVector } from './ptz';
               this.adjustSize();
             });
           }
-          if (this.device_connected && this.stream_mode === 'snapshot') {
-            this.fetchSnapshot();
-          }
-        }, snapshotInterval);
+        });
       } else if (errorMessage) {
         console.error(errorMessage);
-        if (this.device_connected && this.stream_mode === 'snapshot') {
-          this._snapshotTimer = window.setTimeout(() => {
-            this.fetchSnapshot();
-          }, 1000);
-        }
+        this.scheduleNextSnapshotAfterRequest(requestStartedAt);
       }
     }
 

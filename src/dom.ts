@@ -34,6 +34,12 @@ function isHtmlElement(value: unknown): value is HTMLElement {
   return value instanceof HTMLElement;
 }
 
+function getStoredDisplay(element: HTMLElement): string | undefined {
+  return element.dataset.codexDisplay && element.dataset.codexDisplay !== 'none'
+    ? element.dataset.codexDisplay
+    : undefined;
+}
+
 function isValueElement(value: unknown): value is HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | HTMLOptionElement {
   return value instanceof HTMLInputElement
     || value instanceof HTMLSelectElement
@@ -160,6 +166,9 @@ export class DomCollection {
       if (isHtmlElement(element)) {
         element.hidden = false;
         element.style.removeProperty('display');
+        if (window.getComputedStyle(element).display === 'none') {
+          element.style.display = getStoredDisplay(element) || 'block';
+        }
       }
     });
     return this;
@@ -168,6 +177,10 @@ export class DomCollection {
   public hide(): this {
     this.elements.forEach((element) => {
       if (isHtmlElement(element)) {
+        const computedDisplay = window.getComputedStyle(element).display;
+        if (computedDisplay !== 'none') {
+          element.dataset.codexDisplay = computedDisplay;
+        }
         element.hidden = true;
         element.style.display = 'none';
       }
@@ -284,7 +297,8 @@ export class DomCollection {
   public modal(action: 'show' | 'hide'): this {
     this.elements.forEach((element) => {
       if (isHtmlElement(element)) {
-        element.classList.toggle('is-visible', action === 'show');
+        element.style.display = action === 'show' ? 'block' : 'none';
+        element.classList.toggle('in', action === 'show');
         element.setAttribute('aria-hidden', action === 'show' ? 'false' : 'true');
       }
     });
