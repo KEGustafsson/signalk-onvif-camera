@@ -172,6 +172,9 @@ import {
   });
 
   class OnvifManager {
+    private static readonly HEARTBEAT_INTERVAL_MS = 20000;
+    private static readonly HEARTBEAT_TIMEOUT_MS = 5000;
+
     private ws: WebSocket | null = null;
     private el: ManagerElements;
     private selected_address = '';
@@ -187,6 +190,8 @@ import {
     private snapshotUrl: string | null = null;
     private _reconnectTimer: number | null = null;
     private _heartbeatTimer: number | null = null;
+    private _heartbeatTimeoutTimer: number | null = null;
+    private _awaitingHeartbeatPong = false;
     private _reconnectAttempts = 0;
     private pendingConnectAddress: string | null = null;
     private _snapshotRequestSequence = 0;
@@ -320,6 +325,7 @@ import {
         }
         console.debug('WebSocket connection established.');
         this.clearReconnectTimer();
+        this.clearHeartbeatTimeout();
         this._reconnectAttempts = 0;
         this.startHeartbeat();
         if (!this.device_connected) {
@@ -340,6 +346,9 @@ import {
       };
       socket.onerror = (_event: Event) => {
         console.debug('WebSocket connection error.');
+        if (this.ws === socket && socket.readyState !== WebSocket.OPEN) {
+          this.forceReconnect();
+        }
       };
       socket.onmessage = (res: MessageEvent<string>) => {
         if (this.ws !== socket) {
@@ -374,6 +383,8 @@ import {
           const heartbeat = toStringValue(data.result as WsHeartbeatResult);
           if (heartbeat !== 'pong') {
             console.debug('Unexpected WebSocket heartbeat response:', heartbeat);
+          } else {
+            this.clearHeartbeatTimeout();
           }
         }
       };
@@ -385,12 +396,22 @@ import {
 
     private startHeartbeat(): void {
       this.stopHeartbeat();
+      this._awaitingHeartbeatPong = false;
       this._heartbeatTimer = window.setInterval(() => {
-        if (!this.sendRequest('ping')) {
-          this.stopHeartbeat();
-          this.scheduleReconnect();
+        if (this._awaitingHeartbeatPong) {
+          this.forceReconnect();
+          return;
         }
-      }, 20000);
+
+        this._awaitingHeartbeatPong = true;
+        this._heartbeatTimeoutTimer = window.setTimeout(() => {
+          this.forceReconnect();
+        }, OnvifManager.HEARTBEAT_TIMEOUT_MS);
+
+        if (!this.sendRequest('ping')) {
+          this.forceReconnect();
+        }
+      }, OnvifManager.HEARTBEAT_INTERVAL_MS);
     }
 
     private stopHeartbeat(): void {
@@ -398,6 +419,15 @@ import {
         clearInterval(this._heartbeatTimer);
         this._heartbeatTimer = null;
       }
+      this.clearHeartbeatTimeout();
+    }
+
+    private clearHeartbeatTimeout(): void {
+      if (this._heartbeatTimeoutTimer !== null) {
+        clearTimeout(this._heartbeatTimeoutTimer);
+        this._heartbeatTimeoutTimer = null;
+      }
+      this._awaitingHeartbeatPong = false;
     }
 
     private clearSnapshotTimer(): void {
@@ -460,6 +490,20 @@ import {
         clearTimeout(this._reconnectTimer);
         this._reconnectTimer = null;
       }
+    }
+
+    private forceReconnect(): void {
+      const socket = this.ws;
+      this.stopHeartbeat();
+      if (socket) {
+        this.ws = null;
+        try {
+          socket.close();
+        } catch (_error) {
+          // Ignore browser socket close errors and proceed to reconnect.
+        }
+      }
+      this.scheduleReconnect();
     }
 
     private scheduleReconnect(): void {
