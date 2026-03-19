@@ -1,12 +1,12 @@
 /* ------------------------------------------------------------------
-* node-onvif - service-events.js
+* node-onvif - service-events
 *
 * Copyright (c) 2016 - 2017, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2017-08-26
 * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+const mOnvifSoap = require('./soap');
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServiceEvents(params)

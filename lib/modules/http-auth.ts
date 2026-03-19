@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-* node-onvif - http-auth.js
+* node-onvif - http-auth
 *
 * Copyright (c) 2016, Futomi Hatano, All rights reserved.
 * Released under the MIT license
@@ -95,12 +95,7 @@ OnvifHttpAuth.prototype._createCnonce = function (digit) {
 };
 
 OnvifHttpAuth.prototype._createHash = function (algo, data) {
-  let hash = null;
-  if(algo === 'MD5') {
-    hash = mCrypto.createHash('md5');
-  } else {
-    hash = mCrypto.createHash('sha256');
-  }
+  const hash = mCrypto.createHash(algo === 'MD5' ? 'md5' : 'sha256');
   hash.update(data, 'utf8');
   return hash.digest('hex');
 };

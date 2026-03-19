@@ -8,8 +8,8 @@
   },
   "extends": "eslint:recommended",
   "parserOptions": {
-    "ecmaVersion": 2018,
-    "sourceType": "commonjs"
+    "ecmaVersion": 2020,
+    "sourceType": "module"
   },
   "globals": {
     "img_w": "writable",
@@ -21,7 +21,7 @@
     "quotes": ["warn", "single", { "avoidEscape": true }],
     "semi": ["error", "always"],
     "no-console": "off",
-    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-unused-vars": "off",
     "no-var": "warn",
     "prefer-const": "warn",
     "no-trailing-spaces": "error",
@@ -39,7 +39,7 @@
   "ignorePatterns": [
     "node_modules/",
     "public/",
-    "cert/",
-    "vite.config.js"
+    "dist/",
+    "cert/"
   ]
 }

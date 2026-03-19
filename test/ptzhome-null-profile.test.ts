@@ -10,7 +10,7 @@ const EventEmitter = require('events');
 
 // ── ws mock ─────────────────────────────────────────────────────────────────
 
-let mockConnectionHandler = null;
+let mockConnectionHandler: ((socket: unknown) => void) | null = null;
 const mockWsClose = jest.fn();
 
 jest.mock('ws', () => {
@@ -27,7 +27,7 @@ jest.mock('ws', () => {
 
 // ── onvif mock: device with PTZ service but no current profile ───────────────
 
-jest.mock('../lib/node-onvif.js', () => {
+jest.mock('../lib/node-onvif', () => {
   function MockOnvifDevice(params) {
     const xaddr = params.xaddr || `http://${params.address || '127.0.0.1'}/onvif/device_service`;
     try {
@@ -100,13 +100,16 @@ describe('ptzHome null-profile guard', () => {
       getDataDirPath: jest.fn(() => '/tmp/test-signalk')
     };
 
-    const createPlugin = require('../index.js');
+    const createPlugin = require('../index');
     plugin = createPlugin(mockApp);
     plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
 
     // Populate the devices map via the startDiscovery WS handler
     const setupSocket = makeSocket();
-    mockConnectionHandler(setupSocket);
+    if (!mockConnectionHandler) {
+      throw new Error('Expected PTZ home test WebSocket connection handler');
+    }
+    (mockConnectionHandler as (socket: unknown) => void)(setupSocket);
     sendMessage(setupSocket, { method: 'startDiscovery', params: {} });
     // Wait for startProbe promise to resolve and device to be registered
     await new Promise(r => setTimeout(r, 50));
@@ -118,7 +121,10 @@ describe('ptzHome null-profile guard', () => {
 
   test('responds with error (not TypeError) when no media profile is selected', async () => {
     const socket = makeSocket();
-    mockConnectionHandler(socket);
+    if (!mockConnectionHandler) {
+      throw new Error('Expected PTZ home test WebSocket connection handler');
+    }
+    mockConnectionHandler!(socket);
     sendMessage(socket, { method: 'ptzHome', params: { address: '192.168.1.50' } });
     await new Promise(r => setTimeout(r, 10));
     expect(socket.send).toHaveBeenCalled();

@@ -9,7 +9,7 @@ const EventEmitter = require('events');
 
 // ── ws mock (must be at module level; factory may only reference `mock*` vars) ─
 
-let mockConnectionHandler = null;
+let mockConnectionHandler: ((socket: unknown) => void) | null = null;
 const mockWsClose = jest.fn();
 
 jest.mock('ws', () => {
@@ -42,6 +42,13 @@ function lastSent(socket) {
   return JSON.parse(calls[calls.length - 1][0]);
 }
 
+function withConnectionHandler(socket) {
+  if (!mockConnectionHandler) {
+    throw new Error('Expected WebSocket connection handler');
+  }
+  mockConnectionHandler(socket);
+}
+
 // ── test setup ───────────────────────────────────────────────────────────────
 
 describe('WebSocket message handling', () => {
@@ -64,7 +71,7 @@ describe('WebSocket message handling', () => {
       getDataDirPath: jest.fn(() => '/tmp/test-signalk')
     };
 
-    const createPlugin = require('../index.js');
+    const createPlugin = require('../index');
     plugin = createPlugin(mockApp);
     plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
   });
@@ -91,7 +98,7 @@ describe('WebSocket message handling', () => {
   describe('invalid JSON', () => {
     test('should send error response for malformed message', () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       socket.emit('message', '{bad-json}');
       expect(socket.send).toHaveBeenCalledTimes(1);
       expect(lastSent(socket).error).toBeDefined();
@@ -100,14 +107,14 @@ describe('WebSocket message handling', () => {
     test('should not send when socket is not OPEN', () => {
       const socket = makeSocket();
       socket.readyState = 3; // CLOSED
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       socket.emit('message', 'not-json');
       expect(socket.send).not.toHaveBeenCalled();
     });
 
     test('should respond with error for unknown method', () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       socket.emit('message', JSON.stringify({ method: 'nonExistentMethod', params: {} }));
       expect(socket.send).toHaveBeenCalled();
       expect(lastSent(socket).error).toMatch(/Unknown method/);
@@ -116,7 +123,7 @@ describe('WebSocket message handling', () => {
     test('should not throw when params field is absent from message', async () => {
       // Regression: before fix, missing params caused TypeError in handlers
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       expect(() =>
         socket.emit('message', JSON.stringify({ method: 'connect' }))
       ).not.toThrow();
@@ -132,14 +139,14 @@ describe('WebSocket message handling', () => {
   describe('socket lifecycle', () => {
     test('close event should not throw', () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       expect(() => socket.emit('close')).not.toThrow();
     });
 
     test('error event should log but not throw', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       expect(() => socket.emit('error', new Error('socket err'))).not.toThrow();
       consoleSpy.mockRestore();
     });
@@ -150,7 +157,7 @@ describe('WebSocket message handling', () => {
   describe('connect', () => {
     test('responds with error for invalid IP address', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'connect', params: { address: 'not-an-ip' } });
       await new Promise(r => setTimeout(r, 10));
       expect(socket.send).toHaveBeenCalled();
@@ -161,7 +168,7 @@ describe('WebSocket message handling', () => {
 
     test('responds with error when device not in discovered list', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'connect', params: { address: '192.168.99.1' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -175,7 +182,7 @@ describe('WebSocket message handling', () => {
   describe('fetchSnapshot', () => {
     test('responds with error for invalid address', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'fetchSnapshot', params: { address: 'bad' } });
       await new Promise(r => setTimeout(r, 10));
       expect(lastSent(socket).error).toBeDefined();
@@ -183,7 +190,7 @@ describe('WebSocket message handling', () => {
 
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'fetchSnapshot', params: { address: '10.1.2.3' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -197,7 +204,7 @@ describe('WebSocket message handling', () => {
   describe('ptzMove', () => {
     test('responds with error for invalid address', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, {
         method: 'ptzMove',
         params: { address: 'x.x.x.x', speed: { x: 0, y: 0, z: 0 }, timeout: 10 }
@@ -210,7 +217,7 @@ describe('WebSocket message handling', () => {
 
     test('responds with error when speed is out of range', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, {
         method: 'ptzMove',
         params: { address: '192.168.1.1', speed: { x: 5, y: 0, z: 0 }, timeout: 10 }
@@ -222,7 +229,7 @@ describe('WebSocket message handling', () => {
 
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, {
         method: 'ptzMove',
         params: { address: '10.0.0.5', speed: { x: 0.5, y: 0, z: 0 }, timeout: 10 }
@@ -237,7 +244,7 @@ describe('WebSocket message handling', () => {
   describe('ptzStop', () => {
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'ptzStop', params: { address: '10.0.0.6' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -251,7 +258,7 @@ describe('WebSocket message handling', () => {
   describe('ptzHome', () => {
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'ptzHome', params: { address: '10.0.0.7' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -265,7 +272,7 @@ describe('WebSocket message handling', () => {
   describe('getProfiles', () => {
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'getProfiles', params: { address: '10.0.0.8' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -279,7 +286,7 @@ describe('WebSocket message handling', () => {
   describe('changeProfile', () => {
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'changeProfile', params: { address: '10.0.0.9', token: 'T1' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -293,7 +300,7 @@ describe('WebSocket message handling', () => {
   describe('getStreams', () => {
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'getStreams', params: { address: '10.0.0.10' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);
@@ -307,7 +314,7 @@ describe('WebSocket message handling', () => {
   describe('getDeviceInfo', () => {
     test('responds with error when device not found', async () => {
       const socket = makeSocket();
-      mockConnectionHandler(socket);
+      withConnectionHandler(socket);
       sendMessage(socket, { method: 'getDeviceInfo', params: { address: '10.0.0.11' } });
       await new Promise(r => setTimeout(r, 10));
       const resp = lastSent(socket);

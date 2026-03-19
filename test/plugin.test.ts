@@ -26,7 +26,7 @@ describe('signalk-onvif-camera plugin', () => {
       getDataDirPath: jest.fn(() => '/tmp/test-signalk')
     };
 
-    const createPlugin = require('../index.js');
+    const createPlugin = require('../index');
     plugin = createPlugin(mockApp);
   });
 
@@ -60,7 +60,7 @@ describe('signalk-onvif-camera plugin', () => {
       const sigtermBefore = process.listenerCount('SIGTERM');
       const sigintBefore  = process.listenerCount('SIGINT');
       jest.resetModules();
-      require('../index.js');
+      require('../index');
       expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
       expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
     });
@@ -170,7 +170,7 @@ describe('signalk-onvif-camera plugin', () => {
       let capturedData;
       const originalWriteFileSync = fs.writeFileSync;
       jest.spyOn(fs, 'writeFileSync').mockImplementation((filePath, data) => {
-        if (filePath.includes('browserdata.json')) {
+        if (String(filePath).includes('browserdata.json')) {
           capturedData = data;
         } else {
           originalWriteFileSync(filePath, data);
@@ -189,7 +189,7 @@ describe('signalk-onvif-camera plugin', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const appNoServer = { ...mockApp, server: null };
       jest.resetModules();
-      const createPlugin = require('../index.js');
+      const createPlugin = require('../index');
       const p = createPlugin(appNoServer);
       expect(() => p.start(baseOptions)).not.toThrow();
       consoleSpy.mockRestore();

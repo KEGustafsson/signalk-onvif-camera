@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true
+  },
+  "include": [
+    "src/onvif/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/server/config/**/*.ts",
+    "src/server/domain/**/*.ts",
+    "src/server/security/**/*.ts",
+    "src/server/types.ts"
+  ],
+  "exclude": [
+    "dist",
+    "coverage",
+    "node_modules"
+  ]
+}

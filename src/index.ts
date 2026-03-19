@@ -110,6 +110,9 @@
     // Copy URL button handlers
     $('.copy-url-btn').on('click', function () {
       const target = $(this).data('target');
+      if (!target) {
+        return;
+      }
       const text = $(target).val();
       if (navigator.clipboard) {
         navigator.clipboard.writeText(text).catch(function () {});

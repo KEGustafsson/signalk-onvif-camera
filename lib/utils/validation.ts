@@ -5,6 +5,8 @@
 const config = require('../config/defaults');
 
 class ValidationError extends Error {
+  field;
+
   constructor(message, field) {
     super(message);
     this.name = 'ValidationError';

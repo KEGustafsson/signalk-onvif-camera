@@ -1,12 +1,12 @@
 /* ------------------------------------------------------------------
-* node-onvif - service-device.js
+* node-onvif - service-device
 *
 * Copyright (c) 2016, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2016-10-02
 * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+const mOnvifSoap = require('./soap');
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServiceDevice(params)
@@ -897,12 +897,12 @@ OnvifServiceDevice.prototype._parseGetSystemDateAndTime = function (s) {
   if(!s2) {return null;}
 
   const type = s2['DateTimeType'] || '';
-  let dst = null;
+  let dst: boolean | null = null;
   if(s2['DaylightSavings']) {
     dst = (s2['DaylightSavings'] === 'true') ? true : false;
   }
   const tz = (s2['TimeZone'] && s2['TimeZone']['TZ']) ? s2['TimeZone']['TZ'] : '';
-  let date = null;
+  let date: Date | null = null;
   if(s2['UTCDateTime']) {
     const udt = s2['UTCDateTime'];
     const t = udt['Time'];
