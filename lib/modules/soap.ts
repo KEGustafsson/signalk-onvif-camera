@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-* node-onvif - soap.js
+* node-onvif - soap
 *
 * Copyright (c) 2016-2018, Futomi Hatano, All rights reserved.
 * Released under the MIT license
@@ -10,7 +10,7 @@ const mXml2Js = require('xml2js');
 const mHttp   = require('http');
 const mHttps  = require('https');
 const mCrypto = require('crypto');
-let mHtml   = null;
+let mHtml: { prettyPrint(xml: string, options: { indent_size: number }): string } | null = null;
 try {
   mHtml   = require('html');
 } catch(e) {
@@ -136,16 +136,16 @@ OnvifSoap.prototype._request = function (oxaddr, soap) {
           const text = res.statusMessage;
           if(xml) {
             this.parse(xml).then((parsed) => {
-              let msg = '';
+              let msg: unknown = '';
               try {
                 msg = parsed['Body']['Fault']['Reason']['Text'];
-                if(typeof(msg) === 'object') {
+                if(typeof(msg) === 'object' && msg !== null) {
                   msg = msg['_'];
                 }
               } catch(e) {
                 // Ignore parsing errors
               }
-              if(msg) {
+              if(typeof(msg) === 'string' && msg) {
                 reject(new Error(code + ' ' + text + ' - ' + msg));
               } else {
                 reject(err);

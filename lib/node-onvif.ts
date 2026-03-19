@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-* node-onvif - node-onvif.js
+* node-onvif - node-onvif
 *
 * Copyright (c) 2016 - 2017, Futomi Hatano, All rights reserved.
 * Released under the MIT license
@@ -14,9 +14,9 @@ const mCrypto = require('crypto');
 * ---------------------------------------------------------------- */
 function Onvif() {
   // Public
-  this.OnvifDevice = require('./modules/device.js');
+  this.OnvifDevice = require('./modules/device');
   // Private
-  this._OnvifSoap  = require('./modules/soap.js');
+  this._OnvifSoap  = require('./modules/soap');
   this._MULTICAST_ADDRESS = '239.255.255.250';
   this._PORT = 3702;
   this._udp = null;
@@ -77,8 +77,8 @@ Onvif.prototype.startProbe = function (callback) {
         // const type = '';
         let urn = '';
         let xaddrs = [];
-        let scopes = [];
-        let types = '';
+        let scopes: string[] = [];
+        let types: string[] = [];
         try {
           const probe_matches = result['Body']['ProbeMatches'];
 
@@ -109,11 +109,11 @@ Onvif.prototype.startProbe = function (callback) {
             let location = '';
             scopes.forEach((s) => {
               if(s.indexOf('onvif://www.onvif.org/hardware/') === 0) {
-                hardware = s.split('/').pop();
+                hardware = s.split('/').pop() || '';
               } else if(s.indexOf('onvif://www.onvif.org/location/') === 0) {
-                location = s.split('/').pop();
+                location = s.split('/').pop() || '';
               } else if(s.indexOf('onvif://www.onvif.org/name/') === 0) {
-                name = s.split('/').pop();
+                name = s.split('/').pop() || '';
                 name = name.replace(/_/g, ' ');
               }
             });
@@ -150,7 +150,7 @@ Onvif.prototype.startProbe = function (callback) {
       });
       this._discovery_wait_timer = setTimeout(() => {
         this.stopProbe().then(() => {
-          const device_list = [];
+          const device_list: Array<Record<string, unknown>> = [];
           Object.keys(this._devices).forEach((urn) => {
             device_list.push(this._devices[urn]);
           });
@@ -204,7 +204,7 @@ Onvif.prototype._sendProbe = function (_callback) {
   soap_tmpl = soap_tmpl.replace(/>\s+</g, '><');
   soap_tmpl = soap_tmpl.replace(/\s+/g, ' ');
 
-  const soap_set = [];
+  const soap_set: string[] = [];
   ['NetworkVideoTransmitter', 'Device', 'NetworkVideoDisplay'].forEach((type) => {
     let s = soap_tmpl;
     s = s.replace('__type__', type);
@@ -212,7 +212,7 @@ Onvif.prototype._sendProbe = function (_callback) {
     soap_set.push(s);
   });
 
-  const soap_list = [];
+  const soap_list: string[] = [];
   for(let i=0; i<this._DISCOVERY_RETRY_MAX; i++) {
     soap_set.forEach((s) => {
       soap_list.push(s);
@@ -227,7 +227,7 @@ Onvif.prototype._sendProbe = function (_callback) {
     const send = () => {
       // Check if UDP socket is still available before sending
       if (!this._udp) {
-        resolve();
+        resolve(undefined);
         return;
       }
       const soap = soap_list.shift();
@@ -241,10 +241,10 @@ Onvif.prototype._sendProbe = function (_callback) {
           });
         } catch (e) {
           // Socket may have been closed, just resolve
-          resolve();
+          resolve(undefined);
         }
       } else {
-        resolve();
+        resolve(undefined);
       }
     };
     send();
@@ -300,16 +300,16 @@ Onvif.prototype.stopProbe = function (callback) {
           }
           this._udp = null;
           this._probeInProgress = false;
-          resolve();
+          resolve(undefined);
         });
       } catch (e) {
         this._udp = null;
         this._probeInProgress = false;
-        resolve();
+        resolve(undefined);
       }
     } else {
       this._probeInProgress = false;
-      resolve();
+      resolve(undefined);
     }
   });
 

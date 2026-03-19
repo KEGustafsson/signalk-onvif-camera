@@ -1,12 +1,12 @@
 /* ------------------------------------------------------------------
-* node-onvif - service-ptz.js
+* node-onvif - service-ptz
 *
 * Copyright (c) 2016 - 2017, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2017-08-30
 * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+const mOnvifSoap = require('./soap');
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServicePtz(params)

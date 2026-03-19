@@ -1,20 +1,20 @@
 /* ------------------------------------------------------------------
-* node-onvif - device.js
+* node-onvif - device
 *
 * Copyright (c) 2016-2018, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2018-08-13
 * ---------------------------------------------------------------- */
 'use strict';
-const mConfig = require('../config/defaults.js');
+const mConfig = require('../config/defaults');
 const mUtil = require('util');
 const mEventEmitter = require('events').EventEmitter;
 
-const mOnvifServiceDevice = require('./service-device.js');
-const mOnvifServiceMedia = require('./service-media.js');
-const mOnvifServicePtz = require('./service-ptz.js');
-const mOnvifServiceEvents = require('./service-events.js');
-const mOnvifHttpAuth = require('./http-auth.js');
+const mOnvifServiceDevice = require('./service-device');
+const mOnvifServiceMedia = require('./service-media');
+const mOnvifServicePtz = require('./service-ptz');
+const mOnvifServiceEvents = require('./service-events');
+const mOnvifHttpAuth = require('./http-auth');
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifDevice(params)
@@ -184,7 +184,7 @@ OnvifDevice.prototype.fetchSnapshot = function (callback) {
       method: 'GET'
     };
     const req = mOnvifHttpAuth.request(options, (res) => {
-      const buffer_list = [];
+      const buffer_list: Buffer[] = [];
       let buffer_size = 0;
       const maxSize = mConfig.snapshot.maxSize;
       res.on('data', (buf) => {
@@ -272,7 +272,7 @@ OnvifDevice.prototype.ptzMove = function (params, callback) {
     };
     this.ptz_moving = true;
     this.services['ptz'].continuousMove(p).then(() => {
-      resolve();
+      resolve(undefined);
     }).catch((error) => {
       reject(error);
     });
@@ -381,7 +381,7 @@ OnvifDevice.prototype._getSystemDateAndTime = function () {
       if (!error) {
         this.time_diff = this.services.device.getTimeDiff();
       }
-      resolve();
+      resolve(undefined);
     });
   });
   return promise;
@@ -439,7 +439,7 @@ OnvifDevice.prototype._getCapabilities = function () {
           'pass': this.pass
         });
       }
-      resolve();
+      resolve(undefined);
     });
   });
   return promise;
@@ -453,7 +453,7 @@ OnvifDevice.prototype._getDeviceInformation = function () {
         reject(new Error('Failed to initialize the device: ' + error.toString()));
       } else {
         this.information = result['data']['GetDeviceInformationResponse'];
-        resolve();
+        resolve(undefined);
       }
     });
   });
@@ -479,7 +479,21 @@ OnvifDevice.prototype._mediaGetProfiles = function () {
       this.profile_list = [];
       this.current_profile = null;
       profiles.forEach((p) => {
-        const profile = {
+        const profile: {
+          token: string;
+          name: string;
+          snapshot: string;
+          stream: { udp: string; http: string; rtsp: string };
+          video: { source: Record<string, unknown> | null; encoder: Record<string, unknown> | null };
+          audio: { source: Record<string, unknown> | null; encoder: Record<string, unknown> | null };
+          ptz: {
+            range: {
+              x: { min: number; max: number };
+              y: { min: number; max: number };
+              z: { min: number; max: number };
+            };
+          };
+        } = {
           'token': p['$']['token'],
           'name': p['Name'],
           'snapshot': '',
@@ -590,7 +604,7 @@ OnvifDevice.prototype._mediaGetProfiles = function () {
           this.current_profile = profile;
         }
       });
-      resolve();
+      resolve(undefined);
     });
   });
   return promise;
@@ -628,7 +642,7 @@ OnvifDevice.prototype._mediaGetStreamURI = function () {
           getStreamUri();
         }
       } else {
-        resolve();
+        resolve(undefined);
         return;
       }
     };
@@ -661,7 +675,7 @@ OnvifDevice.prototype._mediaGetSnapshotUri = function () {
           getSnapshotUri();
         });
       } else {
-        resolve();
+        resolve(undefined);
       }
     };
     getSnapshotUri();

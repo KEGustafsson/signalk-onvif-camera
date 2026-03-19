@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.build.json",
+  "include": [
+    "index.ts",
+    "src/server/**/*.ts",
+    "src/onvif/**/*.ts",
+    "lib/**/*.ts",
+    "test/**/*.ts"
+  ],
+  "exclude": [
+    "src/index.ts",
+    "public",
+    "dist",
+    "coverage",
+    "node_modules"
+  ]
+}

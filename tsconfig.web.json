@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "public",
+    "rootDir": "src",
+    "module": "ES2020"
+  },
+  "include": [
+    "src/index.ts",
+    "src/globals.d.ts"
+  ],
+  "exclude": [
+    "dist",
+    "coverage",
+    "node_modules"
+  ]
+}

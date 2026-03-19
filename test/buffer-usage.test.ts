@@ -7,13 +7,13 @@ const path = require('path');
 
 describe('Buffer API usage', () => {
   const jsFiles = [
-    'lib/modules/http-auth.js',
-    'lib/modules/soap.js'
+    'lib/modules/http-auth',
+    'lib/modules/soap'
   ];
 
   jsFiles.forEach((file) => {
     test(`${file} should not use deprecated Buffer constructor`, () => {
-      const filePath = path.join(__dirname, '..', file);
+      const filePath = path.join(__dirname, '..', `${file}.js`);
       const content = fs.readFileSync(filePath, 'utf8');
 
       // Check for deprecated 'new Buffer()' usage

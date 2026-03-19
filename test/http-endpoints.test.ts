@@ -7,13 +7,93 @@
 
 const EventEmitter = require('events');
 
+let mockConnectionHandler: ((socket: unknown) => void) | null = null;
+const mockWsClose = jest.fn();
+
+jest.mock('ws', () => {
+  const mockWsServer = jest.fn().mockImplementation(function () {
+    this.on = jest.fn((event, handler) => {
+      if (event === 'connection') mockConnectionHandler = handler;
+    });
+    this.close = mockWsClose;
+    this.handleUpgrade = jest.fn((req, socket, head, cb) => { cb(socket); });
+    this.emit = jest.fn();
+  });
+  return { Server: mockWsServer, OPEN: 1 };
+});
+
+jest.mock('../lib/node-onvif', () => {
+  function buildProfiles(address) {
+    return [{
+      token: `${address}-profile`,
+      name: `Profile for ${address}`,
+      stream: {
+        rtsp: `rtsp://${address}/stream`,
+        http: `http://${address}/stream`,
+        udp: `udp://${address}/stream`
+      },
+      snapshot: `http://${address}/snapshot`,
+      video: {
+        encoder: {
+          resolution: { width: 1920, height: 1080 },
+          framerate: 25,
+          encoding: 'H264'
+        }
+      },
+      audio: null
+    }];
+  }
+
+  function MockOnvifDevice(params) {
+    this.address = new URL(params.xaddr).hostname;
+    this.services = { ptz: null, events: null };
+    this._profiles = buildProfiles(this.address);
+    this._currentProfile = this._profiles[0];
+    this.setAuth = jest.fn();
+    this.init = jest.fn((cb) => cb(null, { Manufacturer: 'MockCam', Model: this.address }));
+    this.changeProfile = jest.fn((token) => {
+      const matchedProfile = this._profiles.find((profile) => profile.token === token) || null;
+      if (matchedProfile) {
+        this._currentProfile = matchedProfile;
+      }
+      return matchedProfile;
+    });
+    this.getCurrentProfile = jest.fn(() => this._currentProfile);
+    this.getProfileList = jest.fn(() => this._profiles);
+    this.getInformation = jest.fn(() => ({ Manufacturer: 'MockCam', Model: this.address }));
+    this.fetchSnapshot = jest.fn((cb) => {
+      if (this.address === '10.0.0.12') {
+        cb(new Error('camera offline'));
+        return;
+      }
+      if (this.address === '10.0.0.13') {
+        cb(null, {});
+        return;
+      }
+      cb(null, {
+        headers: { 'content-type': 'image/png' },
+        body: Buffer.from('img')
+      });
+    });
+  }
+
+  return {
+    OnvifDevice: MockOnvifDevice,
+    startProbe: jest.fn().mockResolvedValue([
+      { xaddrs: ['http://10.0.0.11/onvif/device_service'], name: 'Snapshot OK', urn: 'urn:uuid:snapshot-ok' },
+      { xaddrs: ['http://10.0.0.12/onvif/device_service'], name: 'Snapshot Error', urn: 'urn:uuid:snapshot-error' },
+      { xaddrs: ['http://10.0.0.13/onvif/device_service'], name: 'Snapshot Empty', urn: 'urn:uuid:snapshot-empty' }
+    ])
+  };
+});
+
 function makeRes() {
   const res = {
     _status: null,
     _headers: {},
     _body: null,
     _ended: false,
-    writeHead: jest.fn(function (status, headers) {
+    writeHead: jest.fn(function (status, headers: Record<string, unknown> = {}) {
       this._status = status;
       this._headers = { ...this._headers, ...headers };
     }),
@@ -28,20 +108,29 @@ function makeRes() {
   return res;
 }
 
-function makeReq(query = {}) {
+function makeReq(query: Record<string, string> = {}) {
   const req = new EventEmitter();
   req.query = query;
   req.url = '/?' + Object.entries(query).map(([k, v]) => `${k}=${v}`).join('&');
   return req;
 }
 
+function makeSocket() {
+  const socket = new EventEmitter();
+  socket.readyState = 1;
+  socket.send = jest.fn();
+  return socket;
+}
+
 describe('HTTP endpoint handlers', () => {
   let plugin;
-  let routes;
+  let routes: Record<string, (req: unknown, res: ReturnType<typeof makeRes>) => void>;
   let mockApp;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.resetModules();
+    mockConnectionHandler = null;
+    mockWsClose.mockReset();
     routes = {};
 
     const mockServer = new EventEmitter();
@@ -56,9 +145,17 @@ describe('HTTP endpoint handlers', () => {
       getDataDirPath: jest.fn(() => '/tmp/test-signalk')
     };
 
-    const createPlugin = require('../index.js');
+    const createPlugin = require('../index');
     plugin = createPlugin(mockApp);
     plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
+
+    const socket = makeSocket();
+    if (!mockConnectionHandler) {
+      throw new Error('Expected HTTP endpoint test WebSocket connection handler');
+    }
+    (mockConnectionHandler as (socket: unknown) => void)(socket);
+    socket.emit('message', JSON.stringify({ method: 'startDiscovery', params: {} }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
 
   afterEach(() => {
@@ -161,12 +258,30 @@ describe('HTTP endpoint handlers', () => {
       expect(res.writeHead).toHaveBeenCalledWith(404, expect.any(Object));
     });
 
-    // Device injection requires a WS discovery round-trip not available in this
-    // unit-test harness (the internal device map is not exposed). These paths
-    // are covered by integration tests; mark as todo so the suite stays honest.
-    test.todo('should return 200 with image data when device exists');
-    test.todo('should return 500 on snapshot fetch error');
-    test.todo('should return 502 when snapshot returns no data');
+    test('should return 200 with image data when device exists', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: '10.0.0.11' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': 3,
+        'Cache-Control': 'no-cache'
+      });
+      expect(res.end).toHaveBeenCalledWith(Buffer.from('img'));
+    });
+
+    test('should return 500 on snapshot fetch error', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: '10.0.0.12' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(500, expect.any(Object));
+      expect(res.end).toHaveBeenCalledWith('Failed to fetch snapshot: camera offline');
+    });
+
+    test('should return 502 when snapshot returns no data', () => {
+      const res = makeRes();
+      routes[path](makeReq({ address: '10.0.0.13' }), res);
+      expect(res.writeHead).toHaveBeenCalledWith(502, expect.any(Object));
+      expect(res.end).toHaveBeenCalledWith('Snapshot returned no data');
+    });
   });
 
   // ── /api/streams ─────────────────────────────────────────────────────────────
@@ -178,7 +293,7 @@ describe('HTTP endpoint handlers', () => {
       const res = makeRes();
       routes[path](makeReq({}), res);
       expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
-      const body = JSON.parse(res.end.mock.calls[0][0]);
+      const body = JSON.parse(String(res.end.mock.calls[0][0]));
       expect(body.error).toBeDefined();
     });
 
@@ -204,7 +319,7 @@ describe('HTTP endpoint handlers', () => {
       const res = makeRes();
       routes[path](makeReq({}), res);
       expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object));
-      const body = JSON.parse(res.end.mock.calls[0][0]);
+      const body = JSON.parse(String(res.end.mock.calls[0][0]));
       expect(body.error).toBeDefined();
     });
 
