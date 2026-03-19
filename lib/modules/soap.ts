@@ -4,41 +4,72 @@
 * Copyright (c) 2016-2018, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2018-08-13
-* ---------------------------------------------------------------- */
+ * ---------------------------------------------------------------- */
 'use strict';
-const mXml2Js = require('xml2js');
-const mHttp   = require('http');
-const mHttps  = require('https');
-const mCrypto = require('crypto');
-let mHtml   = null;
+import type { IncomingMessage, RequestOptions } from 'http';
+
+import type { OnvifSoapLike, RequestSoapParams, SoapCommandResult, UnknownRecord } from '../types';
+
+const mXml2Js = require('xml2js') as typeof import('xml2js');
+const mHttp = require('http') as typeof import('http');
+const mHttps = require('https') as typeof import('https');
+const mCrypto = require('crypto') as typeof import('crypto');
+let mHtml: { prettyPrint(value: string, options: { indent_size: number }): string } | null = null;
 try {
-  mHtml   = require('html');
-} catch(e) {
+  mHtml = require('html') as { prettyPrint(value: string, options: { indent_size: number }): string };
+} catch (_error) {
   // Optional dependency
+}
+
+interface SoapFaultText extends UnknownRecord {
+  _: string;
+}
+
+interface OnvifSoapState extends OnvifSoapLike {
+  HTTP_TIMEOUT: number;
+  _request(oxaddr: URL, soap: string): Promise<string>;
+  _parseResponseResult(methodName: string, response: UnknownRecord): UnknownRecord | null;
+  _getFaultReason(response: UnknownRecord): string;
+  _createSoapUserToken(diff: number | undefined, user: string, pass?: string): string;
+  _createNonce(digit: number): Buffer;
+  _getTypeOfValue(value: unknown): string;
+}
+
+interface OnvifSoapConstructor {
+  new (): OnvifSoapState;
+  prototype: OnvifSoapState;
+}
+
+function getRequestPort(protocol: string, port: string): number {
+  const parsedPort = parseInt(port, 10);
+  if(Number.isFinite(parsedPort)) {
+    return parsedPort;
+  }
+  return protocol === 'https:' ? 443 : 80;
 }
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifSoap()
 * ---------------------------------------------------------------- */
-function OnvifSoap() {
+const OnvifSoap = function (this: OnvifSoapState) {
   this.HTTP_TIMEOUT = 3000; // ms
-}
+} as unknown as OnvifSoapConstructor;
 
 /* ------------------------------------------------------------------
 * Method: parse(soap)
 * ---------------------------------------------------------------- */
-OnvifSoap.prototype.parse = function (soap) {
-  const promise = new Promise((resolve, reject) => {
+OnvifSoap.prototype.parse = function (this: OnvifSoapState, soap: string) {
+  const promise = new Promise<UnknownRecord>((resolve, reject) => {
     const opts = {
       'explicitRoot'     : false,
       'explicitArray'    : false,
       'ignoreAttrs'      : false, // Never change to `true`
-      'tagNameProcessors': [function (name) {
+      'tagNameProcessors': [function (name: string) {
         const m = name.match(/^([^:]+):([^:]+)$/);
         return (m ? m[2] : name);
       }]
     };
-    mXml2Js.parseString(soap, opts, (error, result) => {
+    mXml2Js.parseString(soap, opts, (error: Error | null, result: UnknownRecord) => {
       if(error) {
         reject(error);
       } else {
@@ -52,13 +83,13 @@ OnvifSoap.prototype.parse = function (soap) {
 /* ------------------------------------------------------------------
 * Method: requestCommand(oxaddr, method_name, soap)
 * ---------------------------------------------------------------- */
-OnvifSoap.prototype.requestCommand = function (oxaddr, method_name, soap) {
-  const promise = new Promise((resolve, reject) => {
+OnvifSoap.prototype.requestCommand = function (this: OnvifSoapState, oxaddr: URL, method_name: string, soap: string) {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let xml = '';
-    this._request(oxaddr, soap).then((res) => {
+    this._request(oxaddr, soap).then((res: string) => {
       xml = res;
       return this.parse(xml);
-    }).then((result) => {
+    }).then((result: UnknownRecord) => {
       const fault = this._getFaultReason(result);
       if(fault) {
         const err = new Error(fault);
@@ -85,24 +116,37 @@ OnvifSoap.prototype.requestCommand = function (oxaddr, method_name, soap) {
   return promise;
 };
 
-OnvifSoap.prototype._parseResponseResult = function (method_name, res) {
+OnvifSoap.prototype._parseResponseResult = function (method_name: string, res: UnknownRecord): UnknownRecord | null {
   const s0 = res['Body'];
-  if(!s0) {return null;}
+  if(!s0 || typeof s0 !== 'object') {return null;}
   if((method_name + 'Response') in s0) {
-    return s0;
+    return s0 as UnknownRecord;
   } else {
     return null;
   }
 };
 
-OnvifSoap.prototype._request = function (oxaddr, soap) {
-  const promise = new Promise((resolve, reject) => {
-    const post_opts = {
+OnvifSoap.prototype._request = function (this: OnvifSoapState, oxaddr: URL, soap: string) {
+  const promise = new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const resolveOnce = (value: string): void => {
+      if (!settled) {
+        settled = true;
+        resolve(value);
+      }
+    };
+    const rejectOnce = (error: Error): void => {
+      if (!settled) {
+        settled = true;
+        reject(error);
+      }
+    };
+    const post_opts: RequestOptions = {
       protocol: oxaddr.protocol,
       //auth    : oxaddr.auth,
       hostname: oxaddr.hostname,
-      port    : oxaddr.port || 80,
-      path    : oxaddr.pathname,
+      port    : getRequestPort(oxaddr.protocol, oxaddr.port),
+      path    : oxaddr.pathname + oxaddr.search,
       method  : 'POST',
       headers: {
         //'Content-Type': 'application/soap+xml; charset=utf-8; action="http://www.onvif.org/ver10/device/wsdl/GetScopes"',
@@ -112,11 +156,17 @@ OnvifSoap.prototype._request = function (oxaddr, soap) {
     };
 
     const httpModule = (oxaddr.protocol === 'https:') ? mHttps : mHttp;
-    let req = httpModule.request(post_opts, (res) => {
+    let req: import('http').ClientRequest | null = httpModule.request(post_opts, (res: IncomingMessage) => {
       res.setEncoding('utf8');
       let xml = '';
-      res.on('data', (chunk) => {
+      res.on('data', (chunk: string) => {
         xml += chunk;
+      });
+      res.on('error', (error: Error) => {
+        rejectOnce(new Error('Network Error: ' + error.message));
+      });
+      res.on('aborted', () => {
+        rejectOnce(new Error('Network Error: Response aborted'));
       });
       res.on('end', () => {
         if(req) {
@@ -124,79 +174,76 @@ OnvifSoap.prototype._request = function (oxaddr, soap) {
           req.removeAllListeners('timeout');
           req = null;
         }
-        if(res) {
-          res.removeAllListeners('data');
-          res.removeAllListeners('end');
-        }
         if(res.statusCode === 200) {
-          resolve(xml);
+          resolveOnce(xml);
         } else {
           const err = new Error(res.statusCode + ' ' + res.statusMessage);
           const code = res.statusCode;
           const text = res.statusMessage;
           if(xml) {
-            this.parse(xml).then((parsed) => {
+            this.parse(xml).then((parsed: UnknownRecord) => {
               let msg = '';
               try {
-                msg = parsed['Body']['Fault']['Reason']['Text'];
-                if(typeof(msg) === 'object') {
-                  msg = msg['_'];
+                const faultText = (((parsed['Body'] as UnknownRecord)?.['Fault'] as UnknownRecord)?.['Reason'] as UnknownRecord)?.['Text'];
+                if (typeof(faultText) === 'string') {
+                  msg = faultText;
+                } else if (faultText && typeof(faultText) === 'object') {
+                  msg = (faultText as SoapFaultText)['_'] || '';
                 }
-              } catch(e) {
+              } catch(_error) {
                 // Ignore parsing errors
               }
               if(msg) {
-                reject(new Error(code + ' ' + text + ' - ' + msg));
+                rejectOnce(new Error(code + ' ' + text + ' - ' + msg));
               } else {
-                reject(err);
+                rejectOnce(err);
               }
             }).catch((_error) => {
-              reject(err);
+              rejectOnce(err);
             });
           } else {
-            reject(err);
+            rejectOnce(err);
           }
         }
-        res = null;
       });
     });
 
     req.setTimeout(this.HTTP_TIMEOUT);
 
     req.on('timeout', () => {
-      req.destroy();
+      req?.destroy();
     });
 
-    req.on('error', (error) => {
-      req.removeAllListeners('error');
-      req.removeAllListeners('timeout');
+    req.on('error', (error: Error) => {
+      req?.removeAllListeners('error');
+      req?.removeAllListeners('timeout');
       req = null;
-      reject(new Error('Network Error: ' + (error ? error.message : '')));
+      rejectOnce(new Error('Network Error: ' + (error ? error.message : '')));
     });
 
-    req.write(soap, 'utf8');
-    req.end();
+    req?.write(soap, 'utf8');
+    req?.end();
   });
   return promise;
 };
 
-OnvifSoap.prototype._getFaultReason = function (r) {
+OnvifSoap.prototype._getFaultReason = function (r: UnknownRecord): string {
   let reason = '';
   try {
-    const reason_el = r['Body']['Fault']['Reason'];
+    const reason_el = ((r['Body'] as UnknownRecord)?.['Fault'] as UnknownRecord)?.['Reason'] as UnknownRecord;
     if(reason_el['Text']) {
-      reason = reason_el['Text'];
+      reason = String(reason_el['Text']);
     } else {
-      const code_el = r['Body']['Fault']['Code'];
+      const code_el = ((r['Body'] as UnknownRecord)?.['Fault'] as UnknownRecord)?.['Code'] as UnknownRecord;
       if(code_el['Value']) {
-        reason = code_el['Value'];
-        const subcode_el = code_el['Subcode'];
+        reason = String(code_el['Value']);
+        const subcode_el = code_el['Subcode'] as UnknownRecord;
         if(subcode_el['Value']) {
-          reason += ' ' + subcode_el['Value'];
+          reason += ' ' + String(subcode_el['Value']);
         }
       }
     }
-  } catch(e) {
+  } catch(_error) {
     // Ignore parsing errors
   }
   return reason;
@@ -212,30 +259,30 @@ OnvifSoap.prototype._getFaultReason = function (r) {
 *   - user: user name
 *   - pass: password
 * ---------------------------------------------------------------- */
-OnvifSoap.prototype.createRequestSoap = function (params) {
+OnvifSoap.prototype.createRequestSoap = function (this: OnvifSoapState, params: RequestSoapParams): string {
   let soap = '';
   soap += '<?xml version="1.0" encoding="UTF-8"?>';
   soap += '<s:Envelope';
   soap += '  xmlns:s="http://www.w3.org/2003/05/soap-envelope"';
-  if(params['xmlns'] && Array.isArray(params['xmlns'])) {
-    params['xmlns'].forEach((ns) => {
+  if(params.xmlns && Array.isArray(params.xmlns)) {
+    params.xmlns.forEach((ns) => {
       soap += ' ' + ns;
     });
   }
   soap += '>';
   soap += '<s:Header>';
-  if(params['user']) {
-    soap += this._createSoapUserToken(params['diff'], params['user'], params['pass']);
+  if(params.user) {
+    soap += this._createSoapUserToken(params.diff, params.user, params.pass);
   }
   soap += '</s:Header>';
-  soap += '<s:Body>' + params['body'] + '</s:Body>';
+  soap += '<s:Body>' + params.body + '</s:Body>';
   soap += '</s:Envelope>';
 
   soap = soap.replace(/>\s+</g, '><');
   return soap;
 };
 
-OnvifSoap.prototype._createSoapUserToken = function (diff, user, pass) {
+OnvifSoap.prototype._createSoapUserToken = function (this: OnvifSoapState, diff: number | undefined, user: string, pass?: string): string {
   if(!diff) {diff = 0;}
   if(!pass) {pass = '';}
   const date = (new Date(Date.now() + diff)).toISOString();
@@ -256,12 +303,11 @@ OnvifSoap.prototype._createSoapUserToken = function (diff, user, pass) {
   return soap;
 };
 
-OnvifSoap.prototype._createNonce = function (digit) {
+OnvifSoap.prototype._createNonce = function (digit: number): Buffer {
   return mCrypto.randomBytes(digit);
 };
 
-OnvifSoap.prototype.escapeXml = function (str) {
-  if (typeof str !== 'string') return str;
+OnvifSoap.prototype.escapeXml = function (str: string): string {
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -274,7 +320,7 @@ OnvifSoap.prototype.escapeXml = function (str) {
 * Method: isInvalidValue(value, type, allow_empty)
 * - type: 'undefined', 'null', 'array', 'integer', 'float', 'boolean', 'object'
 * ---------------------------------------------------------------- */
-OnvifSoap.prototype.isInvalidValue = function (value, type, allow_empty) {
+OnvifSoap.prototype.isInvalidValue = function (this: OnvifSoapState, value: unknown, type: string, allow_empty?: boolean): string {
   const vt = this._getTypeOfValue(value);
   if(type === 'float') {
     if(!vt.match(/^(float|integer)$/)) {
@@ -287,7 +333,7 @@ OnvifSoap.prototype.isInvalidValue = function (value, type, allow_empty) {
   }
 
   if(!allow_empty) {
-    if(vt === 'array' && value.length === 0) {
+    if(vt === 'array' && Array.isArray(value) && value.length === 0) {
       return 'The value must not be an empty array.';
     } else if(vt === 'string' && value === '') {
       return 'The value must not be an empty string.';
@@ -304,7 +350,7 @@ OnvifSoap.prototype.isInvalidValue = function (value, type, allow_empty) {
   return '';
 };
 
-OnvifSoap.prototype._getTypeOfValue = function (value) {
+OnvifSoap.prototype._getTypeOfValue = function (value: unknown): string {
   if(value === undefined) {
     return 'undefined';
   } else if(value === null) {
@@ -318,7 +364,7 @@ OnvifSoap.prototype._getTypeOfValue = function (value) {
   } else if(t === 'string') {
     return 'string';
   } else if(t === 'number') {
-    if(value % 1 === 0) {
+    if((value as number) % 1 === 0) {
       return 'integer';
     } else {
       return 'float';

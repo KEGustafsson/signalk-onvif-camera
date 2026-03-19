@@ -2,10 +2,32 @@
  * Input validation utilities for WebSocket commands and parameters
  */
 
+import type { UnknownRecord } from '../types';
+
 const config = require('../config/defaults');
 
+interface SpeedParams extends UnknownRecord {
+  x?: unknown;
+  y?: unknown;
+  z?: unknown;
+}
+
+interface PTZCommandParams extends UnknownRecord {
+  address?: unknown;
+  speed?: unknown;
+  timeout?: unknown;
+}
+
+interface PluginOptionsValidationParams extends UnknownRecord {
+  ipAddress?: unknown;
+  userName?: unknown;
+  password?: unknown;
+}
+
 class ValidationError extends Error {
-  constructor(message, field) {
+  field: string;
+
+  constructor(message: string, field: string) {
     super(message);
     this.name = 'ValidationError';
     this.field = field;
@@ -15,13 +37,13 @@ class ValidationError extends Error {
 /**
  * Validate IP address format
  */
-function isValidIP(ip) {
+function isValidIP(ip: unknown): ip is string {
   if (!ip || typeof ip !== 'string') return false;
   const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
   if (!ipRegex.test(ip)) return false;
 
   const parts = ip.split('.');
-  return parts.every(part => {
+  return parts.every((part) => {
     const num = parseInt(part, 10);
     return num >= 0 && num <= 255;
   });
@@ -30,7 +52,7 @@ function isValidIP(ip) {
 /**
  * Validate port number
  */
-function isValidPort(port) {
+function isValidPort(port: unknown): port is number {
   if (typeof port !== 'number') return false;
   return port >= 1 && port <= 65535;
 }
@@ -38,7 +60,7 @@ function isValidPort(port) {
 /**
  * Validate PTZ speed value
  */
-function isValidSpeed(speed) {
+function isValidSpeed(speed: unknown): speed is number {
   if (typeof speed !== 'number') return false;
   return speed >= config.ptz.minSpeed && speed <= config.ptz.maxSpeed;
 }
@@ -46,7 +68,7 @@ function isValidSpeed(speed) {
 /**
  * Validate device address parameter
  */
-function validateDeviceAddress(address) {
+function validateDeviceAddress(address: unknown): string {
   if (!address) {
     throw new ValidationError('Device address is required', 'address');
   }
@@ -62,21 +84,23 @@ function validateDeviceAddress(address) {
 /**
  * Validate PTZ command parameters
  */
-function validatePTZCommand(params) {
+function validatePTZCommand(params: unknown): PTZCommandParams {
   if (!params || typeof params !== 'object') {
     throw new ValidationError('Invalid PTZ command parameters', 'params');
   }
+  const command = params as PTZCommandParams;
 
   // Validate address
-  validateDeviceAddress(params.address);
+  validateDeviceAddress(command.address);
 
   // Validate speed if provided
-  if (params.speed) {
-    if (typeof params.speed !== 'object') {
+  if (command.speed) {
+    if (typeof command.speed !== 'object') {
       throw new ValidationError('Speed must be an object', 'speed');
     }
+    const speed = command.speed as SpeedParams;
 
-    const { x = 0, y = 0, z = 0 } = params.speed;
+    const { x = 0, y = 0, z = 0 } = speed;
 
     if (!isValidSpeed(x)) {
       throw new ValidationError(
@@ -99,45 +123,46 @@ function validatePTZCommand(params) {
   }
 
   // Validate timeout if provided
-  if (params.timeout !== undefined) {
-    if (typeof params.timeout !== 'number' || params.timeout < 1 || params.timeout > 300) {
+  if (command.timeout !== undefined) {
+    if (typeof command.timeout !== 'number' || command.timeout < 1 || command.timeout > 300) {
       throw new ValidationError('Timeout must be between 1 and 300 seconds', 'timeout');
     }
   }
 
-  return params;
+  return command;
 }
 
 /**
  * Validate plugin configuration options
  */
-function validatePluginOptions(options) {
+function validatePluginOptions(options: unknown): PluginOptionsValidationParams {
   if (!options || typeof options !== 'object') {
     throw new ValidationError('Invalid plugin options', 'options');
   }
+  const configOptions = options as PluginOptionsValidationParams;
 
   // Validate IP address if provided
-  if (options.ipAddress && !isValidIP(options.ipAddress)) {
+  if (configOptions.ipAddress && !isValidIP(configOptions.ipAddress)) {
     throw new ValidationError('Invalid IP address format', 'ipAddress');
   }
 
   // Validate username
-  if (options.userName && typeof options.userName !== 'string') {
+  if (configOptions.userName && typeof configOptions.userName !== 'string') {
     throw new ValidationError('Username must be a string', 'userName');
   }
 
   // Validate password
-  if (options.password && typeof options.password !== 'string') {
+  if (configOptions.password && typeof configOptions.password !== 'string') {
     throw new ValidationError('Password must be a string', 'password');
   }
 
-  return options;
+  return configOptions;
 }
 
 /**
  * Sanitize string input (prevent injection attacks)
  */
-function sanitizeString(str) {
+function sanitizeString(str: unknown): string {
   if (typeof str !== 'string') return '';
   // Remove any potential XSS or injection characters
   return str.replace(/[<>'"&]/g, '');

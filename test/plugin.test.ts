@@ -2,18 +2,24 @@
  * Tests for signalk-onvif-camera plugin
  */
 
-const EventEmitter = require('events');
+import type { CreatePlugin, MockApp, PluginLike } from './test-types';
+
+const { EventEmitter } = require('events') as typeof import('events');
+
+type MockServer = InstanceType<typeof EventEmitter> & {
+  on: jest.Mock;
+};
 
 describe('signalk-onvif-camera plugin', () => {
-  let plugin;
-  let mockApp;
-  let mockServer;
+  let plugin: PluginLike;
+  let mockApp: MockApp;
+  let mockServer: MockServer;
 
   beforeEach(() => {
     jest.resetModules();
 
     // Minimal http.Server-like emitter so WebSocket.Server can attach
-    mockServer = new EventEmitter();
+    mockServer = new EventEmitter() as MockServer;
     mockServer.on = jest.fn(mockServer.on.bind(mockServer));
 
     mockApp = {
@@ -26,7 +32,7 @@ describe('signalk-onvif-camera plugin', () => {
       getDataDirPath: jest.fn(() => '/tmp/test-signalk')
     };
 
-    const createPlugin = require('../index.js');
+    const createPlugin = require('../index') as CreatePlugin;
     plugin = createPlugin(mockApp);
   });
 
@@ -60,7 +66,7 @@ describe('signalk-onvif-camera plugin', () => {
       const sigtermBefore = process.listenerCount('SIGTERM');
       const sigintBefore  = process.listenerCount('SIGINT');
       jest.resetModules();
-      require('../index.js');
+      require('../index');
       expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
       expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
     });
@@ -121,6 +127,9 @@ describe('signalk-onvif-camera plugin', () => {
       const cameras = plugin.schema.properties.cameras;
       expect(cameras).toBeDefined();
       expect(cameras.type).toBe('array');
+      if (!cameras.items) {
+        throw new Error('Camera schema items were not defined');
+      }
       const props = cameras.items.properties;
       expect(props.address.type).toBe('string');
       expect(props.name.type).toBe('string');
@@ -144,7 +153,7 @@ describe('signalk-onvif-camera plugin', () => {
       const routeCount = mockApp.get.mock.calls.length;
       expect(routeCount).toBeGreaterThanOrEqual(4);
 
-      const paths = mockApp.get.mock.calls.map(c => c[0]);
+      const paths = (mockApp.get.mock.calls as Array<[string, unknown]>).map((call) => call[0]);
       expect(paths).toContain('/plugins/signalk-onvif-camera/mjpeg');
       expect(paths).toContain('/plugins/signalk-onvif-camera/snapshot');
       expect(paths).toContain('/plugins/signalk-onvif-camera/api/streams');
@@ -167,11 +176,11 @@ describe('signalk-onvif-camera plugin', () => {
 
     test('should write browserdata.json with snapshotInterval only', () => {
       const fs = require('fs');
-      let capturedData;
+      let capturedData = '';
       const originalWriteFileSync = fs.writeFileSync;
       jest.spyOn(fs, 'writeFileSync').mockImplementation((filePath, data) => {
-        if (filePath.includes('browserdata.json')) {
-          capturedData = data;
+        if (String(filePath).includes('browserdata.json')) {
+          capturedData = String(data);
         } else {
           originalWriteFileSync(filePath, data);
         }
@@ -189,7 +198,7 @@ describe('signalk-onvif-camera plugin', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const appNoServer = { ...mockApp, server: null };
       jest.resetModules();
-      const createPlugin = require('../index.js');
+      const createPlugin = require('../index') as CreatePlugin;
       const p = createPlugin(appNoServer);
       expect(() => p.start(baseOptions)).not.toThrow();
       consoleSpy.mockRestore();

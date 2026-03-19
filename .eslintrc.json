@@ -8,7 +8,7 @@
   },
   "extends": "eslint:recommended",
   "parserOptions": {
-    "ecmaVersion": 2018,
+    "ecmaVersion": 2022,
     "sourceType": "commonjs"
   },
   "globals": {
@@ -38,8 +38,36 @@
   },
   "ignorePatterns": [
     "node_modules/",
+    "dist/",
+    "coverage/",
     "public/",
     "cert/",
     "vite.config.js"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.ts"],
+      "parser": "@typescript-eslint/parser",
+      "parserOptions": {
+        "ecmaVersion": 2022,
+        "sourceType": "module"
+      },
+      "plugins": ["@typescript-eslint"],
+      "extends": [
+        "eslint:recommended",
+        "plugin:@typescript-eslint/recommended"
+      ],
+      "rules": {
+        "no-unused-vars": "off",
+        "@typescript-eslint/no-unused-vars": ["warn", {
+          "argsIgnorePattern": "^_",
+          "varsIgnorePattern": "^_",
+          "caughtErrorsIgnorePattern": "^[_e]"
+        }],
+        "@typescript-eslint/no-require-imports": "off",
+        "@typescript-eslint/no-explicit-any": "error",
+        "@typescript-eslint/ban-ts-comment": "error"
+      }
+    }
   ]
 }

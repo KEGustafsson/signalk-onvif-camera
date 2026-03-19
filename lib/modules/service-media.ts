@@ -4,9 +4,63 @@
 * Copyright (c) 2016 - 2017, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2017-08-26
-* ---------------------------------------------------------------- */
+ * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+
+import type { NodeStyleCallback, OnvifSoapLike, ServiceModuleParams, SoapCommandResult, StringRecord } from '../types';
+
+const mOnvifSoap = require('./soap') as OnvifSoapLike;
+
+interface OnvifServiceMediaState {
+  xaddr: string;
+  user: string;
+  pass: string;
+  oxaddr: URL;
+  time_diff: number;
+  name_space_attr_list: string[];
+  _createRequestSoap(body: string): string;
+  setAuth(user?: string, pass?: string): void;
+  getStreamUri(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoEncoderConfigurations(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoEncoderConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getCompatibleVideoEncoderConfigurations(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoEncoderConfigurationOptions(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getGuaranteedNumberOfVideoEncoderInstances(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getProfiles(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getProfile(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  createProfile(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  deleteProfile(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoSources(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoSourceConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoSourceConfigurations(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  addVideoSourceConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getCompatibleVideoSourceConfigurations(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getVideoSourceConfigurationOptions(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getMetadataConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getMetadataConfigurations(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  addMetadataConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getCompatibleMetadataConfigurations(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getMetadataConfigurationOptions(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioSources(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioSourceConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioSourceConfigurations(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  addAudioSourceConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getCompatibleAudioSourceConfigurations(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioSourceConfigurationOptions(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioEncoderConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioEncoderConfigurations(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  addAudioEncoderConfiguration(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getCompatibleAudioEncoderConfigurations(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getAudioEncoderConfigurationOptions(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  startMulticastStreaming(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  stopMulticastStreaming(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getSnapshotUri(params: StringRecord, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+}
+
+interface OnvifServiceMediaConstructor {
+  new (params: ServiceModuleParams): OnvifServiceMediaState;
+  prototype: OnvifServiceMediaState;
+}
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServiceMedia(params)
@@ -17,7 +71,7 @@ const mOnvifSoap = require('./soap.js');
 *    - pass  : Password (Optional)
 *    - time_diff: ms
 * ---------------------------------------------------------------- */
-function OnvifServiceMedia(params) {
+const OnvifServiceMedia = function (this: OnvifServiceMediaState, params: ServiceModuleParams) {
   this.xaddr = '';
   this.user = '';
   this.pass = '';
@@ -56,15 +110,16 @@ function OnvifServiceMedia(params) {
 
   this.oxaddr = new URL(this.xaddr);
   if(this.user) {
-    this.oxaddr.auth = this.user + ':' + this.pass;
+    this.oxaddr.username = this.user;
+    this.oxaddr.password = this.pass;
   }
 
-  this.time_diff = params['time_diff'];
+  this.time_diff = params['time_diff'] || 0;
   this.name_space_attr_list = [
     'xmlns:trt="http://www.onvif.org/ver10/media/wsdl"',
     'xmlns:tt="http://www.onvif.org/ver10/schema"'
   ];
-}
+} as unknown as OnvifServiceMediaConstructor;
 
 OnvifServiceMedia.prototype._createRequestSoap = function (body) {
   const soap = mOnvifSoap.createRequestSoap({
@@ -84,9 +139,11 @@ OnvifServiceMedia.prototype.setAuth = function (user, pass) {
   this.user = user || '';
   this.pass = pass || '';
   if(this.user) {
-    this.oxaddr.auth = this.user + ':' + this.pass;
+    this.oxaddr.username = this.user;
+    this.oxaddr.password = this.pass;
   } else {
-    this.oxaddr.auth = '';
+    this.oxaddr.username = '';
+    this.oxaddr.password = '';
   }
 };
 
@@ -102,7 +159,7 @@ OnvifServiceMedia.prototype.setAuth = function (user, pass) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getStreamUri = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -155,7 +212,7 @@ OnvifServiceMedia.prototype.getStreamUri = function (params, callback) {
 * Method: getVideoEncoderConfigurations([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoEncoderConfigurations = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let soap_body = '';
     soap_body += '<trt:GetVideoEncoderConfigurations />';
     const soap = this._createRequestSoap(soap_body);
@@ -186,7 +243,7 @@ OnvifServiceMedia.prototype.getVideoEncoderConfigurations = function (callback) 
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoEncoderConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -231,7 +288,7 @@ OnvifServiceMedia.prototype.getVideoEncoderConfiguration = function (params, cal
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getCompatibleVideoEncoderConfigurations = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -277,7 +334,7 @@ OnvifServiceMedia.prototype.getCompatibleVideoEncoderConfigurations = function (
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoEncoderConfigurationOptions = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -336,7 +393,7 @@ OnvifServiceMedia.prototype.getVideoEncoderConfigurationOptions = function (para
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getGuaranteedNumberOfVideoEncoderInstances = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -375,7 +432,7 @@ OnvifServiceMedia.prototype.getGuaranteedNumberOfVideoEncoderInstances = functio
 * Method: getProfiles([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getProfiles = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetProfiles/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetProfiles', soap).then((result) => {
@@ -405,7 +462,7 @@ OnvifServiceMedia.prototype.getProfiles = function (callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getProfile = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -451,7 +508,7 @@ OnvifServiceMedia.prototype.getProfile = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.createProfile = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -506,7 +563,7 @@ OnvifServiceMedia.prototype.createProfile = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.deleteProfile = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -545,7 +602,7 @@ OnvifServiceMedia.prototype.deleteProfile = function (params, callback) {
 * Method: getVideoSources([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoSources = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetVideoSources/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetVideoSources', soap).then((result) => {
@@ -575,7 +632,7 @@ OnvifServiceMedia.prototype.getVideoSources = function (callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoSourceConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -614,7 +671,7 @@ OnvifServiceMedia.prototype.getVideoSourceConfiguration = function (params, call
 * Method: getVideoSourceConfigurations([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoSourceConfigurations = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetVideoSourceConfigurations/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetVideoSourceConfigurations', soap).then((result) => {
@@ -648,7 +705,7 @@ OnvifServiceMedia.prototype.getVideoSourceConfigurations = function (callback) {
 * No device I own does not support this command
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.addVideoSourceConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -699,7 +756,7 @@ OnvifServiceMedia.prototype.addVideoSourceConfiguration = function (params, call
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getCompatibleVideoSourceConfigurations = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -746,7 +803,7 @@ OnvifServiceMedia.prototype.getCompatibleVideoSourceConfigurations = function (p
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getVideoSourceConfigurationOptions = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -805,7 +862,7 @@ OnvifServiceMedia.prototype.getVideoSourceConfigurationOptions = function (param
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getMetadataConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -844,7 +901,7 @@ OnvifServiceMedia.prototype.getMetadataConfiguration = function (params, callbac
 * Method: getMetadataConfigurations([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getMetadataConfigurations = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetMetadataConfigurations/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetMetadataConfigurations', soap).then((result) => {
@@ -878,7 +935,7 @@ OnvifServiceMedia.prototype.getMetadataConfigurations = function (callback) {
 * No device I own does not support this command
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.addMetadataConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -929,7 +986,7 @@ OnvifServiceMedia.prototype.addMetadataConfiguration = function (params, callbac
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getCompatibleMetadataConfigurations = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -976,7 +1033,7 @@ OnvifServiceMedia.prototype.getCompatibleMetadataConfigurations = function (para
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getMetadataConfigurationOptions = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1029,7 +1086,7 @@ OnvifServiceMedia.prototype.getMetadataConfigurationOptions = function (params, 
 * Method: getAudioSources([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioSources = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetAudioSources/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetAudioSources', soap).then((result) => {
@@ -1059,7 +1116,7 @@ OnvifServiceMedia.prototype.getAudioSources = function (callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioSourceConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1098,7 +1155,7 @@ OnvifServiceMedia.prototype.getAudioSourceConfiguration = function (params, call
 * Method: getAudioSourceConfigurations([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioSourceConfigurations = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetAudioSourceConfigurations/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetAudioSourceConfigurations', soap).then((result) => {
@@ -1132,7 +1189,7 @@ OnvifServiceMedia.prototype.getAudioSourceConfigurations = function (callback) {
 * No device I own does not support this command
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.addAudioSourceConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1183,7 +1240,7 @@ OnvifServiceMedia.prototype.addAudioSourceConfiguration = function (params, call
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getCompatibleAudioSourceConfigurations = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1230,7 +1287,7 @@ OnvifServiceMedia.prototype.getCompatibleAudioSourceConfigurations = function (p
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioSourceConfigurationOptions = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1289,7 +1346,7 @@ OnvifServiceMedia.prototype.getAudioSourceConfigurationOptions = function (param
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioEncoderConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1328,7 +1385,7 @@ OnvifServiceMedia.prototype.getAudioEncoderConfiguration = function (params, cal
 * Method: getAudioEncoderConfigurations([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioEncoderConfigurations = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<trt:GetAudioEncoderConfigurations/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetAudioEncoderConfigurations', soap).then((result) => {
@@ -1362,7 +1419,7 @@ OnvifServiceMedia.prototype.getAudioEncoderConfigurations = function (callback) 
 * Not device I own does not support this command
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.addAudioEncoderConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1413,7 +1470,7 @@ OnvifServiceMedia.prototype.addAudioEncoderConfiguration = function (params, cal
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getCompatibleAudioEncoderConfigurations = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1460,7 +1517,7 @@ OnvifServiceMedia.prototype.getCompatibleAudioEncoderConfigurations = function (
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getAudioEncoderConfigurationOptions = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1521,7 +1578,7 @@ OnvifServiceMedia.prototype.getAudioEncoderConfigurationOptions = function (para
 * No device I own does not support this command
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.startMulticastStreaming = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1568,7 +1625,7 @@ OnvifServiceMedia.prototype.startMulticastStreaming = function (params, callback
 * No device I own does not support this command
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.stopMulticastStreaming = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1613,7 +1670,7 @@ OnvifServiceMedia.prototype.stopMulticastStreaming = function (params, callback)
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceMedia.prototype.getSnapshotUri = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1649,3 +1706,4 @@ OnvifServiceMedia.prototype.getSnapshotUri = function (params, callback) {
 };
 
 module.exports = OnvifServiceMedia;
+

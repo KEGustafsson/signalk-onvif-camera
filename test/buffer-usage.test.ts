@@ -6,12 +6,12 @@ const fs = require('fs');
 const path = require('path');
 
 describe('Buffer API usage', () => {
-  const jsFiles = [
-    'lib/modules/http-auth.js',
-    'lib/modules/soap.js'
+  const tsFiles = [
+    'lib/modules/http-auth.ts',
+    'lib/modules/soap.ts'
   ];
 
-  jsFiles.forEach((file) => {
+  tsFiles.forEach((file) => {
     test(`${file} should not use deprecated Buffer constructor`, () => {
       const filePath = path.join(__dirname, '..', file);
       const content = fs.readFileSync(filePath, 'utf8');

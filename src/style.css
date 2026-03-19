@@ -1,3 +1,188 @@
+* {
+    box-sizing: border-box;
+}
+html,body {
+    font-family: "Segoe UI", Tahoma, sans-serif;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #f3f5f7;
+    color: #1f2933;
+}
+.container {
+    width: min(960px, calc(100% - 2rem));
+    margin: 0 auto;
+}
+.theme-showcase {
+    padding-bottom: 1rem;
+}
+.form-horizontal {
+    display: grid;
+    gap: 0.9rem;
+}
+.form-group {
+    display: grid;
+    gap: 0.35rem;
+    margin: 0;
+}
+.control-label,
+.modal-title,
+.stream-urls-list label,
+.label {
+    font-weight: 600;
+}
+.col-sm-2,
+.col-sm-10 {
+    width: 100%;
+}
+.form-control {
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid #b7c2cc;
+    border-radius: 0.45rem;
+    background: #ffffff;
+    color: inherit;
+    font: inherit;
+}
+.form-control:disabled {
+    background: #e6ebf0;
+    color: #6b7280;
+}
+.btn {
+    appearance: none;
+    border: 1px solid #8a97a6;
+    border-radius: 0.45rem;
+    background: #ffffff;
+    color: #1f2933;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1.2;
+    padding: 0.55rem 0.85rem;
+}
+.btn:hover {
+    background: #eef2f6;
+}
+.btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+.btn-primary {
+    background: #0b66c3;
+    border-color: #0b66c3;
+    color: #ffffff;
+}
+.btn-primary:hover {
+    background: #0a58a7;
+}
+.btn-group {
+    display: inline-flex;
+    flex-wrap: wrap;
+}
+.btn-group .btn {
+    border-radius: 0;
+}
+.btn-group .btn:first-child {
+    border-top-left-radius: 0.45rem;
+    border-bottom-left-radius: 0.45rem;
+}
+.btn-group .btn:last-child {
+    border-top-right-radius: 0.45rem;
+    border-bottom-right-radius: 0.45rem;
+}
+.btn-group .btn.active {
+    background: #dce9f9;
+    border-color: #0b66c3;
+    color: #0b3d75;
+}
+.btn-group input[type="radio"] {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.btn-sm {
+    padding: 0.4rem 0.7rem;
+    font-size: 0.9rem;
+}
+.btn-lg {
+    padding: 0.7rem 1rem;
+    font-size: 1rem;
+}
+.input-group {
+    display: flex;
+    align-items: stretch;
+}
+.input-group .form-control {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+.input-group-btn .btn {
+    min-height: 100%;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+.text-muted {
+    color: #6b7280;
+}
+.close {
+    border: 0;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 1.5rem;
+    line-height: 1;
+    padding: 0.15rem 0.35rem;
+}
+.icon {
+    display: inline-block;
+    min-width: 1.4em;
+    text-align: center;
+}
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(15, 23, 42, 0.55);
+    padding: 1.5rem;
+}
+.modal.is-visible {
+    display: block;
+}
+.modal-dialog {
+    width: min(680px, 100%);
+    margin: 4rem auto;
+}
+.modal-lg {
+    width: min(820px, 100%);
+}
+.modal-content {
+    background: #ffffff;
+    border-radius: 0.8rem;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+}
+.modal-header,
+.modal-body,
+.modal-footer {
+    padding: 1rem 1.2rem;
+}
+.modal-header,
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+.modal-header {
+    border-bottom: 1px solid #d8e0e7;
+}
+.modal-footer {
+    border-top: 1px solid #d8e0e7;
+    justify-content: flex-end;
+}
+
 html,body {
     font-family: "游ゴシック", YuGothic, "ヒラギノ角ゴ Pro", "Hiragino Kaku Gothic Pro", "メイリオ", "Meiryo", sans-serif;
     width: 100%;
@@ -253,4 +438,8 @@ h1 {
 /* Device info box adjustments for new controls */
 #connected-device div.device-info-box {
     max-width: 350px;
+}
+
+html,body {
+    font-family: "Segoe UI", Tahoma, sans-serif;
 }

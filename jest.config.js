@@ -1,26 +1,28 @@
 module.exports = {
+  preset: 'ts-jest',
   testEnvironment: 'node',
   coverageDirectory: 'coverage',
   collectCoverageFrom: [
-    'index.js',
-    'lib/**/*.js',
-    '!lib/node-onvif.js'
+    'index.ts',
+    'lib/**/*.ts',
+    '!lib/node-onvif.ts'
   ],
   testMatch: [
-    '**/test/**/*.test.js'
+    '**/test/**/*.test.ts'
   ],
+  moduleFileExtensions: ['ts', 'js', 'json'],
   verbose: true,
   coverageThreshold: {
     // Per-file thresholds for files that have real unit test coverage.
     // lib/modules/*.js files require real ONVIF hardware and cannot be
     // meaningfully unit tested, so no threshold is set for them.
-    './index.js': {
+    './index.ts': {
       lines: 45,
       functions: 30,
       branches: 30,
       statements: 45
     },
-    './lib/utils/validation.js': {
+    './lib/utils/validation.ts': {
       lines: 85,
       functions: 85,
       branches: 80,

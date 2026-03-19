@@ -4,9 +4,38 @@
 * Copyright (c) 2016 - 2017, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2017-08-26
-* ---------------------------------------------------------------- */
+ * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+
+import type { NodeStyleCallback, OnvifSoapLike, ServiceModuleParams, SoapCommandResult } from '../types';
+
+const mOnvifSoap = require('./soap') as OnvifSoapLike;
+
+interface PullMessagesParams {
+  subscriptionReference?: string;
+  timeout?: number;
+  messageLimit?: number;
+}
+
+interface UnsubscribeParams {
+  subscriptionReference?: string;
+}
+
+interface OnvifServiceEventsState {
+  xaddr: string;
+  user: string;
+  pass: string;
+  oxaddr: URL;
+  time_diff: number;
+  name_space_attr_list: string[];
+  _createRequestSoap(body: string): string;
+  setAuth(user?: string, pass?: string): void;
+  getEventProperties(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  createPullPointSubscription(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  pullMessages(params: PullMessagesParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  unsubscribe(params: UnsubscribeParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getServiceCapabilities(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+}
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServiceEvents(params)
@@ -17,7 +46,7 @@ const mOnvifSoap = require('./soap.js');
 *    - pass  : Password (Optional)
 *    - time_diff: ms
 * ---------------------------------------------------------------- */
-function OnvifServiceEvents(params) {
+function OnvifServiceEvents(this: OnvifServiceEventsState, params: ServiceModuleParams) {
   this.xaddr = '';
   this.user = '';
   this.pass = '';
@@ -56,14 +85,14 @@ function OnvifServiceEvents(params) {
 
   this.oxaddr = new URL(this.xaddr);
 
-  this.time_diff = params['time_diff'];
+  this.time_diff = params['time_diff'] || 0;
   this.name_space_attr_list = [
     'xmlns:wsa="http://www.w3.org/2005/08/addressing"',
     'xmlns:tev="http://www.onvif.org/ver10/events/wsdl"'
   ];
 }
 
-OnvifServiceEvents.prototype._createRequestSoap = function (body) {
+OnvifServiceEvents.prototype._createRequestSoap = function (this: OnvifServiceEventsState, body: string): string {
   const soap = mOnvifSoap.createRequestSoap({
     'body': body,
     'xmlns': this.name_space_attr_list,
@@ -77,7 +106,7 @@ OnvifServiceEvents.prototype._createRequestSoap = function (body) {
 /* ------------------------------------------------------------------
 * Method: setAuth(user, pass)
 * ---------------------------------------------------------------- */
-OnvifServiceEvents.prototype.setAuth = function (user, pass) {
+OnvifServiceEvents.prototype.setAuth = function (this: OnvifServiceEventsState, user?: string, pass?: string): void {
   this.user = user || '';
   this.pass = pass || '';
 };
@@ -85,8 +114,8 @@ OnvifServiceEvents.prototype.setAuth = function (user, pass) {
 /* ------------------------------------------------------------------
 * Method: getEventProperties([callback])
 * ---------------------------------------------------------------- */
-OnvifServiceEvents.prototype.getEventProperties = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+OnvifServiceEvents.prototype.getEventProperties = function (this: OnvifServiceEventsState, callback?: NodeStyleCallback<SoapCommandResult>) {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let soap_body = '';
     soap_body += '<tev:GetEventProperties/>';
     const soap = this._createRequestSoap(soap_body);
@@ -111,8 +140,8 @@ OnvifServiceEvents.prototype.getEventProperties = function (callback) {
 * Method: createPullPointSubscription([callback])
 * Creates a pull point subscription for receiving events
 * ---------------------------------------------------------------- */
-OnvifServiceEvents.prototype.createPullPointSubscription = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+OnvifServiceEvents.prototype.createPullPointSubscription = function (this: OnvifServiceEventsState, callback?: NodeStyleCallback<SoapCommandResult>) {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let soap_body = '';
     soap_body += '<tev:CreatePullPointSubscription>';
     soap_body += '<tev:InitialTerminationTime>PT60S</tev:InitialTerminationTime>';
@@ -143,8 +172,8 @@ OnvifServiceEvents.prototype.createPullPointSubscription = function (callback) {
 *   - timeout: timeout in seconds (default 60)
 *   - messageLimit: max messages to retrieve (default 10)
 * ---------------------------------------------------------------- */
-OnvifServiceEvents.prototype.pullMessages = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+OnvifServiceEvents.prototype.pullMessages = function (this: OnvifServiceEventsState, params: PullMessagesParams, callback?: NodeStyleCallback<SoapCommandResult>) {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     if (!params || !params.subscriptionReference) {
       reject(new Error('subscriptionReference is required'));
       return;
@@ -185,8 +214,8 @@ OnvifServiceEvents.prototype.pullMessages = function (params, callback) {
 * - params:
 *   - subscriptionReference: URL of the subscription endpoint
 * ---------------------------------------------------------------- */
-OnvifServiceEvents.prototype.unsubscribe = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+OnvifServiceEvents.prototype.unsubscribe = function (this: OnvifServiceEventsState, params: UnsubscribeParams, callback?: NodeStyleCallback<SoapCommandResult>) {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     if (!params || !params.subscriptionReference) {
       reject(new Error('subscriptionReference is required'));
       return;
@@ -219,8 +248,8 @@ OnvifServiceEvents.prototype.unsubscribe = function (params, callback) {
 * Method: getServiceCapabilities([callback])
 * Gets the capabilities of the events service
 * ---------------------------------------------------------------- */
-OnvifServiceEvents.prototype.getServiceCapabilities = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+OnvifServiceEvents.prototype.getServiceCapabilities = function (this: OnvifServiceEventsState, callback?: NodeStyleCallback<SoapCommandResult>) {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let soap_body = '';
     soap_body += '<tev:GetServiceCapabilities/>';
     const soap = this._createRequestSoap(soap_body);
@@ -242,8 +271,6 @@ OnvifServiceEvents.prototype.getServiceCapabilities = function (callback) {
 };
 
 module.exports = OnvifServiceEvents;
-
-
 
 
 

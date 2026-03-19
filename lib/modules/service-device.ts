@@ -4,9 +4,157 @@
 * Copyright (c) 2016, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2016-10-02
-* ---------------------------------------------------------------- */
+ * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+
+import type { NodeStyleCallback, OnvifSoapLike, ServiceModuleParams, SoapCommandResult, UnknownRecord } from '../types';
+
+const mOnvifSoap = require('./soap') as OnvifSoapLike;
+
+function toRecord(value: unknown): UnknownRecord | null {
+  return typeof value === 'object' && value !== null ? value as UnknownRecord : null;
+}
+
+interface ScopesParams {
+  Scopes: string[];
+}
+
+interface HostnameParams {
+  Name: string;
+}
+
+interface DNSManualEntry {
+  Type: string;
+  IPv4Address?: string;
+  IPv6Address?: string;
+}
+
+interface DNSParams {
+  FromDHCP: boolean;
+  SearchDomain?: string[];
+  DNSManual?: DNSManualEntry[];
+}
+
+interface NetworkProtocol {
+  Name: string;
+  Enabled?: boolean;
+  Port?: number;
+  [key: string]: string | number | boolean | undefined;
+}
+
+interface NetworkProtocolsParams {
+  NetworkProtocols: NetworkProtocol[];
+}
+
+interface NetworkGatewayEntry {
+  IPv4Address?: string;
+  IPv6Address?: string;
+  [key: string]: string | undefined;
+}
+
+interface NetworkGatewayParams {
+  NetworkGateway: NetworkGatewayEntry[];
+}
+
+interface SystemDateTimeParams {
+  DateTimeType: string;
+  DaylightSavings: boolean;
+  TimeZone?: string;
+  UTCDateTime?: Date;
+}
+
+interface UserEntry {
+  Username: string;
+  Password?: string;
+  UserLevel?: string;
+}
+
+interface UsersParams {
+  User: UserEntry[];
+}
+
+interface NTPManualEntry {
+  Type: string;
+  IPv4Address?: string;
+  IPv6Address?: string;
+}
+
+interface NTPParams {
+  FromDHCP: boolean;
+  NTPManual?: NTPManualEntry;
+}
+
+interface IPAddressFilterEntry {
+  Address: string;
+  PrefixLength: number;
+}
+
+interface IPAddressFilterParams {
+  Type: string;
+  IPv4Address: IPAddressFilterEntry[];
+}
+
+interface IncludeCapabilityParams {
+  IncludeCapability: boolean;
+}
+
+interface ParsedDateTime extends UnknownRecord {
+  type: string;
+  dst: boolean | null;
+  tz: string;
+  date: Date | null;
+}
+
+interface OnvifServiceDeviceState {
+  xaddr: string;
+  user: string;
+  pass: string;
+  oxaddr: URL;
+  time_diff: number;
+  name_space_attr_list: string[];
+  _createRequestSoap(body: string): string;
+  getTimeDiff(): number;
+  setAuth(user?: string, pass?: string): void;
+  getCapabilities(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getWsdlUrl(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getDiscoveryMode(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getScopes(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setScopes(params: ScopesParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  addScopes(params: ScopesParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  removeScopes(params: ScopesParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getHostname(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setHostname(params: HostnameParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getDNS(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setDNS(params: DNSParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getNetworkInterfaces(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getNetworkProtocols(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setNetworkProtocols(params: NetworkProtocolsParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getNetworkDefaultGateway(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setNetworkDefaultGateway(params: NetworkGatewayParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getDeviceInformation(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getSystemDateAndTime(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  _parseGetSystemDateAndTime(s: UnknownRecord): ParsedDateTime | null;
+  setSystemDateAndTime(params: SystemDateTimeParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  reboot(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getUsers(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  createUsers(params: UsersParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  deleteUsers(params: UsersParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setUser(params: UsersParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getRelayOutputs(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getNTP(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setNTP(params: NTPParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getDynamicDNS(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getZeroConfiguration(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getIPAddressFilter(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setIPAddressFilter(params: IPAddressFilterParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getServices(params: IncludeCapabilityParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getServiceCapabilities(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+}
+
+interface OnvifServiceDeviceConstructor {
+  new (params: ServiceModuleParams): OnvifServiceDeviceState;
+  prototype: OnvifServiceDeviceState;
+}
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServiceDevice(params)
@@ -16,7 +164,7 @@ const mOnvifSoap = require('./soap.js');
 *    - user  : User name (Optional)
 *    - pass  : Password (Optional)
 * ---------------------------------------------------------------- */
-function OnvifServiceDevice(params) {
+const OnvifServiceDevice = function (this: OnvifServiceDeviceState, params: ServiceModuleParams) {
   this.xaddr = '';
   this.user = '';
   this.pass = '';
@@ -55,7 +203,8 @@ function OnvifServiceDevice(params) {
 
   this.oxaddr = new URL(this.xaddr);
   if(this.user) {
-    this.oxaddr.auth = this.user + ':' + this.pass;
+    this.oxaddr.username = this.user;
+    this.oxaddr.password = this.pass;
   }
 
   this.time_diff = 0;
@@ -63,7 +212,7 @@ function OnvifServiceDevice(params) {
     'xmlns:tds="http://www.onvif.org/ver10/device/wsdl"',
     'xmlns:tt="http://www.onvif.org/ver10/schema"'
   ];
-}
+} as unknown as OnvifServiceDeviceConstructor;
 
 OnvifServiceDevice.prototype._createRequestSoap = function (body) {
   const soap = mOnvifSoap.createRequestSoap({
@@ -90,9 +239,11 @@ OnvifServiceDevice.prototype.setAuth = function (user, pass) {
   this.user = user || '';
   this.pass = pass || '';
   if(this.user) {
-    this.oxaddr.auth = this.user + ':' + this.pass;
+    this.oxaddr.username = this.user;
+    this.oxaddr.password = this.pass;
   } else {
-    this.oxaddr.auth = '';
+    this.oxaddr.username = '';
+    this.oxaddr.password = '';
   }
 };
 
@@ -100,7 +251,7 @@ OnvifServiceDevice.prototype.setAuth = function (user, pass) {
 * Method: getCapabilities([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getCapabilities = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let soap_body = '';
     soap_body += '<tds:GetCapabilities>';
     soap_body += '  <tds:Category>All</tds:Category>';
@@ -127,7 +278,7 @@ OnvifServiceDevice.prototype.getCapabilities = function (callback) {
 * Method: getWsdlUrl([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getWsdlUrl = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetWsdlUrl/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetWsdlUrl', soap).then((result) => {
@@ -151,7 +302,7 @@ OnvifServiceDevice.prototype.getWsdlUrl = function (callback) {
 * Method: getDiscoveryMode(callback)
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getDiscoveryMode = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetDiscoveryMode/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetDiscoveryMode', soap).then((result) => {
@@ -175,7 +326,7 @@ OnvifServiceDevice.prototype.getDiscoveryMode = function (callback) {
 * Method: getScopes([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getScopes = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetScopes/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetScopes', soap).then((result) => {
@@ -213,7 +364,7 @@ OnvifServiceDevice.prototype.getScopes = function (callback) {
 * {'Scopes': []}
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setScopes = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -264,7 +415,7 @@ OnvifServiceDevice.prototype.setScopes = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.addScopes = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -315,7 +466,7 @@ OnvifServiceDevice.prototype.addScopes = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.removeScopes = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -357,7 +508,7 @@ OnvifServiceDevice.prototype.removeScopes = function (params, callback) {
 * Method: getHostname([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getHostname = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetHostname/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetHostname', soap).then((result) => {
@@ -385,7 +536,7 @@ OnvifServiceDevice.prototype.getHostname = function (callback) {
 * {'Name': 'test'}
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setHostname = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -425,23 +576,25 @@ OnvifServiceDevice.prototype.setHostname = function (params, callback) {
 * Method: getDNS([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getDNS = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetDNS/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetDNS', soap).then((result) => {
       try {
-        const di = result['data']['DNSInformation'];
-        if(!di['SearchDomain']) {
-          di['SearchDomain'] = [];
-        } else if(!Array.isArray(di['SearchDomain'])) {
-          di['SearchDomain'] = [di['SearchDomain']];
+        const di = toRecord(result['data']['DNSInformation']);
+        if(di) {
+          if(!di['SearchDomain']) {
+            di['SearchDomain'] = [];
+          } else if(!Array.isArray(di['SearchDomain'])) {
+            di['SearchDomain'] = [di['SearchDomain']];
+          }
+          if(!di['DNSManual']) {
+            di['DNSManual'] = [];
+          } else if(!Array.isArray(di['DNSManual'])) {
+            di['DNSManual'] = [di['DNSManual']];
+          }
+          result['data'] = di;
         }
-        if(!di['DNSManual']) {
-          di['DNSManual'] = [];
-        } else if(!Array.isArray(di['DNSManual'])) {
-          di['DNSManual'] = [di['DNSManual']];
-        }
-        result['data'] = di;
       } catch(e) {
         // Ignore parsing errors
       }
@@ -481,7 +634,7 @@ OnvifServiceDevice.prototype.getDNS = function (callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setDNS = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -498,8 +651,9 @@ OnvifServiceDevice.prototype.setDNS = function (params, callback) {
         reject(new Error('The "SearchDomain" property was invalid: ' + err_msg));
         return;
       }
-      for(let i=0; i<params['SearchDomain'].length; i++) {
-        if((err_msg = mOnvifSoap.isInvalidValue(params['SearchDomain'][i], 'string'))) {
+      const searchDomain = params['SearchDomain'] || [];
+      for(let i=0; i<searchDomain.length; i++) {
+        if((err_msg = mOnvifSoap.isInvalidValue(searchDomain[i], 'string'))) {
           reject(new Error('The "SearchDomain" property was invalid: ' + err_msg));
           return;
         }
@@ -512,8 +666,9 @@ OnvifServiceDevice.prototype.setDNS = function (params, callback) {
         return;
       }
 
-      for(let i=0; i<params['DNSManual'].length; i++) {
-        const o = params['DNSManual'][i];
+      const dnsManual = params['DNSManual'] || [];
+      for(let i=0; i<dnsManual.length; i++) {
+        const o = dnsManual[i];
         if((err_msg = mOnvifSoap.isInvalidValue(o, 'object'))) {
           reject(new Error('The "DNSManual" property was invalid: ' + err_msg));
           return;
@@ -548,15 +703,17 @@ OnvifServiceDevice.prototype.setDNS = function (params, callback) {
       soap_body += '<tds:FromDHCP>' + params['FromDHCP'] + '</tds:FromDHCP>';
     }
     if('SearchDomain' in params) {
-      params['SearchDomain'].forEach((s) => {
+      const searchDomain = params['SearchDomain'] || [];
+      searchDomain.forEach((s) => {
         soap_body += '<tds:SearchDomain>' + mOnvifSoap.escapeXml(s) + '</tds:SearchDomain>';
       });
     }
     if('DNSManual' in params) {
-      if(params['DNSManual'].length === 0) {
+      const dnsManual = params['DNSManual'] || [];
+      if(dnsManual.length === 0) {
         soap_body += '<tds:DNSManual></tds:DNSManual>';
       } else {
-        params['DNSManual'].forEach((o) => {
+        dnsManual.forEach((o) => {
           soap_body += '<tds:DNSManual>';
           soap_body += '<tt:Type>' + o['Type'] + '</tt:Type>';
           if(o['Type'] === 'IPv4') {
@@ -593,7 +750,7 @@ OnvifServiceDevice.prototype.setDNS = function (params, callback) {
 * Method: getNetworkInterfaces([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getNetworkInterfaces = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetNetworkInterfaces/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetNetworkInterfaces', soap).then((result) => {
@@ -617,7 +774,7 @@ OnvifServiceDevice.prototype.getNetworkInterfaces = function (callback) {
 * Method: getNetworkProtocols([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getNetworkProtocols = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetNetworkProtocols/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetNetworkProtocols', soap).then((result) => {
@@ -654,7 +811,7 @@ OnvifServiceDevice.prototype.getNetworkProtocols = function (callback) {
 *
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setNetworkProtocols = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -739,7 +896,7 @@ OnvifServiceDevice.prototype.setNetworkProtocols = function (params, callback) {
 * Method: getNetworkDefaultGateway([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getNetworkDefaultGateway = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetNetworkDefaultGateway/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetNetworkDefaultGateway', soap).then((result) => {
@@ -773,7 +930,7 @@ OnvifServiceDevice.prototype.getNetworkDefaultGateway = function (callback) {
 *
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setNetworkDefaultGateway = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -838,7 +995,7 @@ OnvifServiceDevice.prototype.setNetworkDefaultGateway = function (params, callba
 * Method: getDeviceInformation([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getDeviceInformation = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetDeviceInformation/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetDeviceInformation', soap).then((result) => {
@@ -862,7 +1019,7 @@ OnvifServiceDevice.prototype.getDeviceInformation = function (callback) {
 * Method: getSystemDateAndTime([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getSystemDateAndTime = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetSystemDateAndTime/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetSystemDateAndTime', soap).then((result) => {
@@ -889,32 +1046,33 @@ OnvifServiceDevice.prototype.getSystemDateAndTime = function (callback) {
 };
 
 OnvifServiceDevice.prototype._parseGetSystemDateAndTime = function (s) {
-  const s0 = s['Body'];
+  const s0 = toRecord(s['Body']);
   if(!s0) {return null;}
-  const s1 = s0['GetSystemDateAndTimeResponse'];
+  const s1 = toRecord(s0['GetSystemDateAndTimeResponse']);
   if(!s1) {return null;}
-  const s2 = s1['SystemDateAndTime'];
+  const s2 = toRecord(s1['SystemDateAndTime']);
   if(!s2) {return null;}
 
-  const type = s2['DateTimeType'] || '';
+  const type = typeof s2['DateTimeType'] === 'string' ? s2['DateTimeType'] : '';
   let dst = null;
   if(s2['DaylightSavings']) {
     dst = (s2['DaylightSavings'] === 'true') ? true : false;
   }
-  const tz = (s2['TimeZone'] && s2['TimeZone']['TZ']) ? s2['TimeZone']['TZ'] : '';
+  const timeZone = toRecord(s2['TimeZone']);
+  const tz = typeof timeZone?.['TZ'] === 'string' ? timeZone['TZ'] : '';
   let date = null;
-  if(s2['UTCDateTime']) {
-    const udt = s2['UTCDateTime'];
-    const t = udt['Time'];
-    const d = udt['Date'];
+  const utcDateTime = toRecord(s2['UTCDateTime']);
+  if(utcDateTime) {
+    const t = toRecord(utcDateTime['Time']);
+    const d = toRecord(utcDateTime['Date']);
     if(t && d && t['Hour'] && t['Minute'] && t['Second'] && d['Year'] && d['Month'] && d['Day']) {
       date = new Date();
-      date.setUTCFullYear(parseInt(d['Year'], 10));
-      date.setUTCMonth(parseInt(d['Month'], 10) - 1);
-      date.setUTCDate(parseInt(d['Day'], 10));
-      date.setUTCHours(parseInt(t['Hour'], 10));
-      date.setUTCMinutes(parseInt(t['Minute'], 10));
-      date.setUTCSeconds(parseInt(t['Second'], 10));
+      date.setUTCFullYear(parseInt(String(d['Year']), 10));
+      date.setUTCMonth(parseInt(String(d['Month']), 10) - 1);
+      date.setUTCDate(parseInt(String(d['Day']), 10));
+      date.setUTCHours(parseInt(String(t['Hour']), 10));
+      date.setUTCMinutes(parseInt(String(t['Minute']), 10));
+      date.setUTCSeconds(parseInt(String(t['Second']), 10));
     }
   }
   const res = {
@@ -937,7 +1095,7 @@ OnvifServiceDevice.prototype._parseGetSystemDateAndTime = function (s) {
 * Setting the "UTCDateTime" does not work well for now.
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setSystemDateAndTime = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -957,11 +1115,12 @@ OnvifServiceDevice.prototype.setSystemDateAndTime = function (params, callback) 
       return;
     }
 
-    if('TimeZone' in params) {
-      if((err_msg = mOnvifSoap.isInvalidValue(params['TimeZone'], 'string'))) {
+    const timeZone = params['TimeZone'];
+    if(timeZone !== undefined) {
+      if((err_msg = mOnvifSoap.isInvalidValue(timeZone, 'string'))) {
         reject(new Error('The "TimeZone" property was invalid: ' + err_msg));
         return;
-      } else if(!params['TimeZone'].match(/^[A-Z]{3}-?\d{1,2}([A-Z]{3,4})?$/)) {
+      } else if(!timeZone.match(/^[A-Z]{3}-?\d{1,2}([A-Z]{3,4})?$/)) {
         reject(new Error('The "TimeZone" property must be a string representing a time zone which is defined in POSIX 1003.1.'));
         return;
       }
@@ -1023,7 +1182,7 @@ OnvifServiceDevice.prototype.setSystemDateAndTime = function (params, callback) 
 * Method: reboot([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.reboot = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:SystemReboot/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'SystemReboot', soap).then((result) => {
@@ -1047,14 +1206,17 @@ OnvifServiceDevice.prototype.reboot = function (callback) {
 * Method: getUsers([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getUsers = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetUsers/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetUsers', soap).then((result) => {
       try {
-        const d = result['data']['GetUsersResponse']['User'];
-        if(!Array.isArray(d)) {
-          result['data']['GetUsersResponse']['User'] = [d];
+        const response = toRecord(result['data']['GetUsersResponse']);
+        if(response) {
+          const users = response['User'];
+          if(users !== undefined && !Array.isArray(users)) {
+            response['User'] = [users];
+          }
         }
       } catch(e) {
         // Ignore parsing errors
@@ -1092,7 +1254,7 @@ OnvifServiceDevice.prototype.getUsers = function (callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.createUsers = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1124,7 +1286,7 @@ OnvifServiceDevice.prototype.createUsers = function (params, callback) {
       if((err_msg = mOnvifSoap.isInvalidValue(u['UserLevel'], 'string'))) {
         reject(new Error('The "UserLevel" property was invalid: ' + err_msg));
         return;
-      } else if(!u['UserLevel'].match(/^(Administrator|Operator|User|Anonymous)$/)) {
+      } else if(!(u['UserLevel'] || '').match(/^(Administrator|Operator|User|Anonymous)$/)) {
         reject(new Error('The "UserLevel" property must be either "Administrator", "Operator", "User", or "Anonymous".'));
         return;
       }
@@ -1135,8 +1297,8 @@ OnvifServiceDevice.prototype.createUsers = function (params, callback) {
     params['User'].forEach((u) => {
       soap_body += '<tds:User>';
       soap_body += '<tt:Username>' + mOnvifSoap.escapeXml(u['Username']) + '</tt:Username>';
-      soap_body += '<tt:Password>' + mOnvifSoap.escapeXml(u['Password']) + '</tt:Password>';
-      soap_body += '<tt:UserLevel>' + u['UserLevel'] + '</tt:UserLevel>';
+      soap_body += '<tt:Password>' + mOnvifSoap.escapeXml(u['Password'] || '') + '</tt:Password>';
+      soap_body += '<tt:UserLevel>' + (u['UserLevel'] || '') + '</tt:UserLevel>';
       soap_body += '</tds:User>';
     });
     soap_body += '</tds:CreateUsers>';
@@ -1174,7 +1336,7 @@ OnvifServiceDevice.prototype.createUsers = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.deleteUsers = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1243,7 +1405,7 @@ OnvifServiceDevice.prototype.deleteUsers = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setUser = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1278,7 +1440,7 @@ OnvifServiceDevice.prototype.setUser = function (params, callback) {
         if((err_msg = mOnvifSoap.isInvalidValue(u['UserLevel'], 'string'))) {
           reject(new Error('The "UserLevel" property was invalid: ' + err_msg));
           return;
-        } else if(!u['UserLevel'].match(/^(Administrator|Operator|User|Anonymous)$/)) {
+        } else if(!(u['UserLevel'] || '').match(/^(Administrator|Operator|User|Anonymous)$/)) {
           reject(new Error('The "UserLevel" property must be either "Administrator", "Operator", "User", or "Anonymous".'));
           return;
         }
@@ -1291,10 +1453,10 @@ OnvifServiceDevice.prototype.setUser = function (params, callback) {
       soap_body += '<tds:User>';
       soap_body += '<tt:Username>' + mOnvifSoap.escapeXml(u['Username']) + '</tt:Username>';
       if('Password' in u) {
-        soap_body += '<tt:Password>' + mOnvifSoap.escapeXml(u['Password']) + '</tt:Password>';
+        soap_body += '<tt:Password>' + mOnvifSoap.escapeXml(u['Password'] || '') + '</tt:Password>';
       }
       if('UserLevel' in u) {
-        soap_body += '<tt:UserLevel>' + u['UserLevel'] + '</tt:UserLevel>';
+        soap_body += '<tt:UserLevel>' + (u['UserLevel'] || '') + '</tt:UserLevel>';
       }
       soap_body += '</tds:User>';
     });
@@ -1322,7 +1484,7 @@ OnvifServiceDevice.prototype.setUser = function (params, callback) {
 * Method: getRelayOutputs([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getRelayOutputs = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetRelayOutputs/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetRelayOutputs', soap).then((result) => {
@@ -1346,7 +1508,7 @@ OnvifServiceDevice.prototype.getRelayOutputs = function (callback) {
 * Method: getNTP([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getNTP = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetNTP/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetNTP', soap).then((result) => {
@@ -1380,7 +1542,7 @@ OnvifServiceDevice.prototype.getNTP = function (callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setNTP = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1399,6 +1561,10 @@ OnvifServiceDevice.prototype.setNTP = function (params, callback) {
       }
 
       const o = params['NTPManual'];
+      if(!o) {
+        reject(new Error('The "NTPManual" property was invalid: The value is required.'));
+        return;
+      }
 
       const type = o['Type'];
       if((err_msg = mOnvifSoap.isInvalidValue(type, 'string'))) {
@@ -1427,6 +1593,10 @@ OnvifServiceDevice.prototype.setNTP = function (params, callback) {
     soap_body += '<tds:FromDHCP>' + params['FromDHCP'] + '</tds:FromDHCP>';
     if('NTPManual' in params) {
       const o = params['NTPManual'];
+      if(!o) {
+        reject(new Error('The "NTPManual" property was invalid: The value is required.'));
+        return;
+      }
       soap_body += '<tds:NTPManual>';
       soap_body += '<tt:Type>' + o['Type'] + '</tt:Type>';
       if(o['Type'] === 'IPv4') {
@@ -1460,7 +1630,7 @@ OnvifServiceDevice.prototype.setNTP = function (params, callback) {
 * Method: getDynamicDNS([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getDynamicDNS = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetDynamicDNS/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetDynamicDNS', soap).then((result) => {
@@ -1484,7 +1654,7 @@ OnvifServiceDevice.prototype.getDynamicDNS = function (callback) {
 * Method: getZeroConfiguration([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getZeroConfiguration = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetZeroConfiguration/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetZeroConfiguration', soap).then((result) => {
@@ -1509,7 +1679,7 @@ OnvifServiceDevice.prototype.getZeroConfiguration = function (callback) {
 * No devcie I own supports this method for now.
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getIPAddressFilter = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetIPAddressFilter/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetIPAddressFilter', soap).then((result) => {
@@ -1550,7 +1720,7 @@ OnvifServiceDevice.prototype.getIPAddressFilter = function (callback) {
 * No devcie I own supports this method for now.
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.setIPAddressFilter = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1628,7 +1798,7 @@ OnvifServiceDevice.prototype.setIPAddressFilter = function (params, callback) {
 * {'IncludeCapability': false}
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getServices = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -1667,7 +1837,7 @@ OnvifServiceDevice.prototype.getServices = function (params, callback) {
 * Method: getServiceCapabilities([callback])
 * ---------------------------------------------------------------- */
 OnvifServiceDevice.prototype.getServiceCapabilities = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tds:GetServiceCapabilities/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetServiceCapabilities', soap).then((result) => {
