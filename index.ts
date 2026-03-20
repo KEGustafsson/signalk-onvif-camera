@@ -46,6 +46,7 @@ const { validateDeviceAddress, validatePTZCommand } = require('./lib/utils/valid
 type TimerHandle = ReturnType<typeof setTimeout>;
 type WsSocket = import('ws').default;
 type WsServer = import('ws').Server;
+type WsPermission = 'READ' | 'WRITE';
 
 interface CameraConfig {
   name: string;
@@ -350,6 +351,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
   let deviceNames: Record<string, string> = {};
   let discoveryRetryTimer: TimerHandle | null = null;
   let discoveryPendingConns: WsSocket[] = [];
+  const activeWsConnections = new Set<WsSocket>();
   const mjpegStreams = new Map<string, { abort: () => void }>(); // Track active MJPEG streams
   const MAX_MJPEG_STREAMS = 10;
   let mjpegStreamCounter = 0;
@@ -430,6 +432,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     // Attach WebSocket server to SignalK's HTTP server.
     // Close any existing wsServer first to prevent leaks on restart.
     if (wsServer) {
+      closeActiveWsConnections();
       wsServer.close();
       wsServer = null;
     }
@@ -455,7 +458,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
           return;
         }
         if (url.pathname === '/plugins/signalk-onvif-camera/ws') {
-          if (!isWsAuthorized(request)) {
+          if (!isWsAuthorized(request, 'READ')) {
             try {
               socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 12\r\n\r\nUnauthorized');
             } catch (_error) {
@@ -633,6 +636,36 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     }, startupDiscoveryDelay * 1000);
   }
 
+  function closeActiveWsConnections(): void {
+    activeWsConnections.forEach((conn) => {
+      try {
+        if (typeof conn.close === 'function') {
+          conn.close();
+        }
+      } catch (_error) {
+        const terminableConn = conn as unknown as { terminate?: () => void };
+        if (typeof terminableConn.terminate === 'function') {
+          try {
+            terminableConn.terminate();
+          } catch (_terminateError) {
+            // Ignore shutdown errors while closing client sockets.
+          }
+        }
+      }
+    });
+    activeWsConnections.clear();
+  }
+
+  function collectDiscoveryRecipients(primaryConn: WsSocket): WsSocket[] {
+    const recipients = [primaryConn, ...discoveryPendingConns];
+    discoveryPendingConns = [];
+    if (discoveryRetryTimer) {
+      clearTimeout(discoveryRetryTimer);
+      discoveryRetryTimer = null;
+    }
+    return Array.from(new Set(recipients));
+  }
+
   plugin.stop = function stop() {
     pluginRunning = false;
     devices = {};
@@ -659,6 +692,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
       stream.abort();
     });
     mjpegStreams.clear();
+    closeActiveWsConnections();
 
     if (upgradeHandler && app.server) {
       app.server.removeListener('upgrade', upgradeHandler);
@@ -819,11 +853,40 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     return true;
   }
 
-  function isWsAuthorized(req: IncomingMessage): boolean {
+  function isWsAuthorized(req: IncomingMessage | undefined, permission: WsPermission): boolean {
     if (app.securityStrategy && typeof app.securityStrategy.shouldAllowRequest === 'function') {
-      return app.securityStrategy.shouldAllowRequest(req as unknown as HttpRequestLike, 'READ');
+      if (!req) {
+        return false;
+      }
+      return app.securityStrategy.shouldAllowRequest(req as unknown as HttpRequestLike, permission);
     }
     return true;
+  }
+
+  function getWsPermission(method: WsMethodId): WsPermission {
+    switch (method) {
+      case 'ptzMove':
+      case 'ptzStop':
+      case 'ptzHome':
+      case 'changeProfile':
+        return 'WRITE';
+      default:
+        return 'READ';
+    }
+  }
+
+  function isWsMethodId(method: string | undefined): method is WsMethodId {
+    return method === 'startDiscovery'
+      || method === 'ping'
+      || method === 'connect'
+      || method === 'fetchSnapshot'
+      || method === 'ptzMove'
+      || method === 'ptzStop'
+      || method === 'ptzHome'
+      || method === 'getProfiles'
+      || method === 'changeProfile'
+      || method === 'getStreams'
+      || method === 'getDeviceInfo';
   }
 
   // MJPEG streaming handler
@@ -1100,7 +1163,11 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     });
   }
 
-  function wsServerConnection(conn: WsSocket): void {
+  function wsServerConnection(conn: WsSocket, request?: IncomingMessage): void {
+    activeWsConnections.add(conn);
+    const connWithCloseEvent = conn as WsSocket & {
+      on(event: 'close', listener: () => void): WsSocket;
+    };
     conn.on('message', (message: import('ws').RawData) => {
       try {
         const rawMessage = typeof message === 'string'
@@ -1117,7 +1184,9 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
         const method = getStringValue(parsed.method);
         const params = isRecord(parsed.params) ? parsed.params : {};
-        if (method === 'startDiscovery') {
+        if (isWsMethodId(method) && !isWsAuthorized(request, getWsPermission(method))) {
+          sendWsResponse(conn, { id: method, error: 'Unauthorized' });
+        } else if (method === 'startDiscovery') {
           startDiscovery(conn);
         } else if (method === 'ping') {
           sendWsResponse(conn, { id: 'ping', result: 'pong' });
@@ -1150,7 +1219,14 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
       }
     });
 
+    connWithCloseEvent.on('close', () => {
+      activeWsConnections.delete(conn);
+      discoveryPendingConns = discoveryPendingConns.filter((pendingConn) => pendingConn !== conn);
+    });
+
     conn.on('error', (error: Error) => {
+      activeWsConnections.delete(conn);
+      discoveryPendingConns = discoveryPendingConns.filter((pendingConn) => pendingConn !== conn);
       app.debug('WebSocket error:', error.message || error);
     });
   }
@@ -1163,23 +1239,23 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
           return;
         }
         deviceList.forEach((device) => {
-          const odevice = new onvif.OnvifDevice({
-            xaddr: device.xaddrs[0]
-          });
-          const addr = odevice.address;
-          if (!devices[addr]) {
-            devices[addr] = odevice;
+          try {
+            const xaddr = device.xaddrs[0];
+            if (!xaddr) {
+              throw new Error('No device service address was provided.');
+            }
+            const odevice = new onvif.OnvifDevice({ xaddr });
+            const addr = odevice.address;
+            if (!devices[addr]) {
+              devices[addr] = odevice;
+            }
+            deviceNames[addr] = (device.name || addr).replace(/%20/g, ' ');
+          } catch (deviceError) {
+            app.debug('Discovery: error processing device:', getErrorMessage(deviceError));
           }
-          deviceNames[addr] = (device.name || addr).replace(/%20/g, ' ');
         });
         const res: WsResponse<DeviceSummaryMap> = { id: 'startDiscovery', result: buildDeviceSummaryMap() };
-        // Notify this caller and any clients that were waiting for retry
-        const allConns = [conn, ...discoveryPendingConns];
-        discoveryPendingConns = [];
-        if (discoveryRetryTimer) {
-          clearTimeout(discoveryRetryTimer);
-          discoveryRetryTimer = null;
-        }
+        const allConns = collectDiscoveryRecipients(conn);
         allConns.forEach((socketConn) => {
           sendWsResponse(socketConn, res);
         });
@@ -1205,14 +1281,16 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
               discoveryRetryTimer = null;
               const pending = discoveryPendingConns.splice(0);
               if (pending.length > 0) {
-                // Use the first pending conn to drive the retry; others are notified via allConns above
-                discoveryPendingConns = pending.slice(1);
+                discoveryPendingConns = pending.slice(1).filter((pendingConn) => pendingConn !== pending[0]);
                 startDiscovery(pending[0]);
               }
             }, 3000);
           }
         } else {
-          sendWsResponse(conn, { id: 'startDiscovery', error: getErrorMessage(error) });
+          const allConns = collectDiscoveryRecipients(conn);
+          allConns.forEach((socketConn) => {
+            sendWsResponse(socketConn, { id: 'startDiscovery', error: getErrorMessage(error) });
+          });
         }
       });
   }

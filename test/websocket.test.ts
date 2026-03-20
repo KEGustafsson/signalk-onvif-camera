@@ -16,6 +16,12 @@ const mockWsClose = jest.fn();
 const mockStartProbe = jest.fn<Promise<Array<{ xaddrs: string[]; name: string }>>, [string?]>().mockResolvedValue([]);
 const mockStopProbe = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
 const mockDeviceInstances: MockOnvifDeviceState[] = [];
+const mockOnvifModule = {
+  startProbe: (...args: Parameters<typeof mockStartProbe>) => mockStartProbe(...args),
+  stopProbe: () => mockStopProbe(),
+  OnvifDevice: null as unknown,
+  _probeInProgress: false
+};
 
 interface MockOnvifDeviceState {
   address: string;
@@ -84,6 +90,9 @@ jest.mock('../lib/node-onvif', () => {
   };
 
   const MockOnvifDevice = function (this: MockOnvifDeviceState, params: { xaddr?: string; address?: string }) {
+    if (!params?.xaddr && !params?.address) {
+      throw new Error('No device service address was provided.');
+    }
     const xaddr = params?.xaddr || `http://${params?.address || '127.0.0.1'}/onvif/device_service`;
     this.address = new URL(xaddr).hostname;
     this.services = {
@@ -121,28 +130,26 @@ jest.mock('../lib/node-onvif', () => {
     mockDeviceInstances.push(this);
   };
 
-  return {
-    startProbe: (...args: Parameters<typeof mockStartProbe>) => mockStartProbe(...args),
-    stopProbe: () => mockStopProbe(),
-    OnvifDevice: MockOnvifDevice,
-    _probeInProgress: false
-  };
+  mockOnvifModule.OnvifDevice = MockOnvifDevice;
+  return mockOnvifModule;
 });
 
 function makeSocket(): MockSocket {
   const socket = new EventEmitter() as MockSocket;
   socket.readyState = 1;
   socket.send = jest.fn();
+  socket.close = jest.fn();
+  socket.terminate = jest.fn();
   return socket;
 }
 
-function connectSocket(): MockSocket {
+function connectSocket(request: JsonRecord = { url: '/plugins/signalk-onvif-camera/ws' }): MockSocket {
   const socket = makeSocket();
   const handler = mockConnectionHandler;
   if(!handler) {
     throw new Error('WebSocket connection handler was not registered');
   }
-  handler(socket);
+  handler(socket, request);
   return socket;
 }
 
@@ -168,6 +175,7 @@ describe('WebSocket message handling', () => {
     mockStartProbe.mockResolvedValue([]);
     mockStopProbe.mockReset();
     mockStopProbe.mockResolvedValue(undefined);
+    mockOnvifModule._probeInProgress = false;
     mockDeviceInstances.length = 0;
 
     mockServer = new EventEmitter();
@@ -221,6 +229,25 @@ describe('WebSocket message handling', () => {
     expect(serverInstance.handleUpgrade).not.toHaveBeenCalled();
     expect(socket.write).toHaveBeenCalledWith(expect.stringContaining('401 Unauthorized'));
     expect(socket.destroy).toHaveBeenCalled();
+  });
+
+  test('should reject PTZ commands when websocket request lacks WRITE permission', async () => {
+    mockApp.securityStrategy = {
+      shouldAllowRequest: jest.fn<boolean, [unknown, unknown?]>((_request, permission) => permission === 'READ')
+    };
+
+    const socket = connectSocket();
+    sendMessage(socket, {
+      method: 'ptzMove',
+      params: { address: '10.0.0.5', speed: { x: 0.5, y: 0, z: 0 }, timeout: 10 }
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    expect(mockApp.securityStrategy.shouldAllowRequest).toHaveBeenCalledWith(expect.anything(), 'WRITE');
+    expect(lastSent(socket)).toEqual({
+      id: 'ptzMove',
+      error: 'Unauthorized'
+    });
   });
 
   describe('invalid JSON', () => {
@@ -278,6 +305,65 @@ describe('WebSocket message handling', () => {
       const socket = connectSocket();
       expect(() => socket.emit('error', new Error('socket err'))).not.toThrow();
       consoleSpy.mockRestore();
+    });
+  });
+
+  describe('startDiscovery', () => {
+    test('skips malformed discovery entries instead of failing the entire response', async () => {
+      const socket = connectSocket();
+      mockStartProbe.mockResolvedValue([
+        { xaddrs: [], name: 'Broken Camera' },
+        { xaddrs: ['http://10.0.0.40/onvif/device_service'], name: 'Working Camera' }
+      ]);
+
+      sendMessage(socket, { method: 'startDiscovery' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+      expect(lastSent(socket)).toEqual({
+        id: 'startDiscovery',
+        result: {
+          '10.0.0.40': {
+            address: '10.0.0.40',
+            name: 'Working Camera'
+          }
+        }
+      });
+    });
+
+    test('returns terminal discovery errors to all queued websocket clients', async () => {
+      jest.useFakeTimers();
+      try {
+        mockOnvifModule._probeInProgress = true;
+        mockStartProbe.mockImplementation(() => (
+          mockOnvifModule._probeInProgress
+            ? Promise.reject(new Error('Discovery already in progress'))
+            : Promise.reject(new Error('Probe failed'))
+        ));
+
+        const socketA = connectSocket();
+        const socketB = connectSocket();
+        sendMessage(socketA, { method: 'startDiscovery' });
+        sendMessage(socketB, { method: 'startDiscovery' });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        mockOnvifModule._probeInProgress = false;
+
+        jest.advanceTimersByTime(3000);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(lastSent(socketA)).toEqual({
+          id: 'startDiscovery',
+          error: 'Probe failed'
+        });
+        expect(lastSent(socketB)).toEqual({
+          id: 'startDiscovery',
+          error: 'Probe failed'
+        });
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 
@@ -590,6 +676,12 @@ describe('WebSocket message handling', () => {
     test('should call wsServer.close()', () => {
       plugin.stop();
       expect(mockWsClose).toHaveBeenCalled();
+    });
+
+    test('should close active websocket clients', () => {
+      const socket = connectSocket();
+      plugin.stop();
+      expect(socket.close).toHaveBeenCalled();
     });
   });
 });

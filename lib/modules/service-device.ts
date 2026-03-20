@@ -15,6 +15,13 @@ function toRecord(value: unknown): UnknownRecord | null {
   return typeof value === 'object' && value !== null ? value as UnknownRecord : null;
 }
 
+function hasDefinedValue(record: UnknownRecord, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+    && record[key] !== undefined
+    && record[key] !== null
+    && String(record[key]) !== '';
+}
+
 interface ScopesParams {
   Scopes: string[];
 }
@@ -1055,7 +1062,7 @@ OnvifServiceDevice.prototype._parseGetSystemDateAndTime = function (s) {
 
   const type = typeof s2['DateTimeType'] === 'string' ? s2['DateTimeType'] : '';
   let dst = null;
-  if(s2['DaylightSavings']) {
+  if(hasDefinedValue(s2, 'DaylightSavings')) {
     dst = (s2['DaylightSavings'] === 'true') ? true : false;
   }
   const timeZone = toRecord(s2['TimeZone']);
@@ -1065,14 +1072,24 @@ OnvifServiceDevice.prototype._parseGetSystemDateAndTime = function (s) {
   if(utcDateTime) {
     const t = toRecord(utcDateTime['Time']);
     const d = toRecord(utcDateTime['Date']);
-    if(t && d && t['Hour'] && t['Minute'] && t['Second'] && d['Year'] && d['Month'] && d['Day']) {
-      date = new Date();
-      date.setUTCFullYear(parseInt(String(d['Year']), 10));
-      date.setUTCMonth(parseInt(String(d['Month']), 10) - 1);
-      date.setUTCDate(parseInt(String(d['Day']), 10));
-      date.setUTCHours(parseInt(String(t['Hour']), 10));
-      date.setUTCMinutes(parseInt(String(t['Minute']), 10));
-      date.setUTCSeconds(parseInt(String(t['Second']), 10));
+    if(
+      t && d
+      && hasDefinedValue(t, 'Hour')
+      && hasDefinedValue(t, 'Minute')
+      && hasDefinedValue(t, 'Second')
+      && hasDefinedValue(d, 'Year')
+      && hasDefinedValue(d, 'Month')
+      && hasDefinedValue(d, 'Day')
+    ) {
+      date = new Date(Date.UTC(
+        parseInt(String(d['Year']), 10),
+        parseInt(String(d['Month']), 10) - 1,
+        parseInt(String(d['Day']), 10),
+        parseInt(String(t['Hour']), 10),
+        parseInt(String(t['Minute']), 10),
+        parseInt(String(t['Second']), 10),
+        0
+      ));
     }
   }
   const res = {

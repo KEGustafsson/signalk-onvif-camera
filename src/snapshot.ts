@@ -28,6 +28,10 @@ export function getRemainingSnapshotDelay(
   return Math.max(0, snapshotInterval - elapsed);
 }
 
+export function getSnapshotRequestTimeout(snapshotInterval: number): number {
+  return Math.max(snapshotInterval * 10, 10000);
+}
+
 export function createSnapshotRequestId(sequence: number, address: string): string {
   return `${sequence}:${address}`;
 }

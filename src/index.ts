@@ -5,6 +5,7 @@ import {
   createSnapshotRequestId,
   getNextSnapshotDelay,
   getRemainingSnapshotDelay,
+  getSnapshotRequestTimeout,
   isExpectedSnapshotResponse,
   normalizeSnapshotInterval
 } from './snapshot';
@@ -181,6 +182,7 @@ import {
     private device_connected = false;
     private ptz_moving = false;
     private _snapshotTimer: number | null = null;
+    private _snapshotRequestTimeoutTimer: number | null = null;
     private _mjpegStartTimer: number | null = null;
     private snapshot_w = 400;
     private snapshot_h = 300;
@@ -437,7 +439,15 @@ import {
       }
     }
 
+    private clearSnapshotRequestTimeout(): void {
+      if (this._snapshotRequestTimeoutTimer !== null) {
+        clearTimeout(this._snapshotRequestTimeoutTimer);
+        this._snapshotRequestTimeoutTimer = null;
+      }
+    }
+
     private clearActiveSnapshotRequest(): void {
+      this.clearSnapshotRequestTimeout();
       this._activeSnapshotRequestId = null;
       this._activeSnapshotRequestedAt = null;
       const imageEl = this.el.img_snp.get(0) as HTMLImageElement | undefined;
@@ -445,6 +455,19 @@ import {
         imageEl.onload = null;
         imageEl.onerror = null;
       }
+    }
+
+    private startSnapshotRequestTimeout(requestId: string, requestStartedAt: number): void {
+      this.clearSnapshotRequestTimeout();
+      this._snapshotRequestTimeoutTimer = window.setTimeout(() => {
+        if (!isExpectedSnapshotResponse(this._activeSnapshotRequestId, requestId)) {
+          return;
+        }
+
+        console.error('Snapshot request timed out.');
+        this.clearActiveSnapshotRequest();
+        this.scheduleNextSnapshotAfterRequest(requestStartedAt);
+      }, getSnapshotRequestTimeout(snapshotInterval));
     }
 
     private scheduleNextSnapshot(onBeforeFetch?: () => void): void {
@@ -819,6 +842,7 @@ import {
       this.clearActiveSnapshotRequest();
       this._activeSnapshotRequestId = requestId;
       this._activeSnapshotRequestedAt = requestStartedAt;
+      this.startSnapshotRequestTimeout(requestId, requestStartedAt);
 
       const snapshotRequestUrl = this.buildSnapshotRequestUrl();
       const imageEl = this.el.img_snp.get(0) as HTMLImageElement | undefined;
@@ -830,6 +854,7 @@ import {
 
           this._activeSnapshotRequestId = null;
           this._activeSnapshotRequestedAt = null;
+          this.clearSnapshotRequestTimeout();
           if (!this.device_connected || this.stream_mode !== 'snapshot') {
             return;
           }
@@ -849,6 +874,7 @@ import {
 
           this._activeSnapshotRequestId = null;
           this._activeSnapshotRequestedAt = null;
+          this.clearSnapshotRequestTimeout();
           console.error('Failed to load snapshot image.');
           this.scheduleNextSnapshotAfterRequest(requestStartedAt);
         };
@@ -870,6 +896,7 @@ import {
       const requestStartedAt = this._activeSnapshotRequestedAt ?? Date.now();
       this._activeSnapshotRequestId = null;
       this._activeSnapshotRequestedAt = null;
+      this.clearSnapshotRequestTimeout();
       const resultUrl = toStringValue(data.result);
       const errorMessage = toStringValue(data.error);
 

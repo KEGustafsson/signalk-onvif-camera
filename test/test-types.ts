@@ -55,6 +55,8 @@ export type CreatePlugin = (app: MockApp) => PluginLike;
 export interface MockSocket extends EventEmitter {
   readyState: number;
   send: jest.Mock<void, [string]>;
+  close?: jest.Mock<void, []>;
+  terminate?: jest.Mock<void, []>;
 }
 
-export type ConnectionHandler = (socket: MockSocket) => void;
+export type ConnectionHandler = (socket: MockSocket, request?: unknown) => void;

@@ -3,6 +3,7 @@ import {
   DEFAULT_SNAPSHOT_INTERVAL,
   getNextSnapshotDelay,
   getRemainingSnapshotDelay,
+  getSnapshotRequestTimeout,
   isExpectedSnapshotResponse,
   normalizeSnapshotInterval
 } from '../src/snapshot';
@@ -29,6 +30,11 @@ describe('browser snapshot helpers', () => {
     expect(getRemainingSnapshotDelay(100, 1000, 1030)).toBe(70);
     expect(getRemainingSnapshotDelay(100, 1000, 1100)).toBe(0);
     expect(getRemainingSnapshotDelay(100, 1000, 1400)).toBe(0);
+  });
+
+  test('uses a minimum timeout for hung snapshot requests', () => {
+    expect(getSnapshotRequestTimeout(100)).toBe(10000);
+    expect(getSnapshotRequestTimeout(1500)).toBe(15000);
   });
 
   test('creates unique request ids and only accepts the active response', () => {
