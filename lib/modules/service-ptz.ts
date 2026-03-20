@@ -4,9 +4,93 @@
 * Copyright (c) 2016 - 2017, Futomi Hatano, All rights reserved.
 * Released under the MIT license
 * Date: 2017-08-30
-* ---------------------------------------------------------------- */
+ * ---------------------------------------------------------------- */
 'use strict';
-const mOnvifSoap = require('./soap.js');
+
+import type { NodeStyleCallback, OnvifSoapLike, ServiceModuleParams, SoapCommandResult } from '../types';
+
+const mOnvifSoap = require('./soap') as OnvifSoapLike;
+
+interface ProfileTokenParams {
+  ProfileToken: string;
+}
+
+interface NodeTokenParams {
+  NodeToken: string;
+}
+
+interface ConfigurationTokenParams {
+  ConfigurationToken: string;
+}
+
+interface PtzVector {
+  x?: number;
+  y?: number;
+  z?: number;
+  [key: string]: number | undefined;
+}
+
+interface ContinuousMoveParams extends ProfileTokenParams {
+  Velocity?: PtzVector;
+  Timeout?: number;
+}
+
+interface AbsoluteMoveParams extends ProfileTokenParams {
+  Position: PtzVector;
+  Speed?: PtzVector;
+}
+
+interface RelativeMoveParams extends ProfileTokenParams {
+  Translation: PtzVector;
+  Speed?: PtzVector;
+}
+
+interface StopParams extends ProfileTokenParams {
+  PanTilt?: boolean;
+  Zoom?: boolean;
+}
+
+interface HomePositionParams extends ProfileTokenParams {
+  Speed?: number | PtzVector;
+}
+
+interface PresetParams extends ProfileTokenParams {
+  PresetToken?: string;
+  PresetName?: string;
+  Speed?: number | PtzVector;
+}
+
+interface OnvifServicePtzState {
+  xaddr: string;
+  user: string;
+  pass: string;
+  oxaddr: URL;
+  time_diff: number;
+  name_space_attr_list: string[];
+  _createRequestSoap(body: string): string;
+  setAuth(user?: string, pass?: string): void;
+  getNodes(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getNode(params: NodeTokenParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getConfigurations(callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getConfiguration(params: ConfigurationTokenParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getConfigurationOptions(params: ConfigurationTokenParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getStatus(params: ProfileTokenParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  continuousMove(params: ContinuousMoveParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  absoluteMove(params: AbsoluteMoveParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  relativeMove(params: RelativeMoveParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  stop(params: StopParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  gotoHomePosition(params: HomePositionParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setHomePosition(params: ProfileTokenParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  setPreset(params: PresetParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  getPresets(params: ProfileTokenParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  gotoPreset(params: PresetParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+  removePreset(params: PresetParams, callback?: NodeStyleCallback<SoapCommandResult>): Promise<SoapCommandResult> | void;
+}
+
+interface OnvifServicePtzConstructor {
+  new (params: ServiceModuleParams): OnvifServicePtzState;
+  prototype: OnvifServicePtzState;
+}
 
 /* ------------------------------------------------------------------
 * Constructor: OnvifServicePtz(params)
@@ -17,7 +101,7 @@ const mOnvifSoap = require('./soap.js');
 *    - pass  : Password (Optional)
 *    - time_diff: ms
 * ---------------------------------------------------------------- */
-function OnvifServicePtz(params) {
+const OnvifServicePtz = function (this: OnvifServicePtzState, params: ServiceModuleParams) {
   this.xaddr = '';
   this.user = '';
   this.pass = '';
@@ -56,17 +140,18 @@ function OnvifServicePtz(params) {
 
   this.oxaddr = new URL(this.xaddr);
   if(this.user) {
-    this.oxaddr.auth = this.user + ':' + this.pass;
+    this.oxaddr.username = this.user;
+    this.oxaddr.password = this.pass;
   }
 
-  this.time_diff = params['time_diff'];
+  this.time_diff = params['time_diff'] || 0;
   this.name_space_attr_list = [
     'xmlns:ter="http://www.onvif.org/ver10/error"',
     'xmlns:xs="http://www.w3.org/2001/XMLSchema"',
     'xmlns:tt="http://www.onvif.org/ver10/schema"',
     'xmlns:tptz="http://www.onvif.org/ver20/ptz/wsdl"'
   ];
-}
+} as unknown as OnvifServicePtzConstructor;
 
 OnvifServicePtz.prototype._createRequestSoap = function (body) {
   const soap = mOnvifSoap.createRequestSoap({
@@ -86,9 +171,11 @@ OnvifServicePtz.prototype.setAuth = function (user, pass) {
   this.user = user || '';
   this.pass = pass || '';
   if(this.user) {
-    this.oxaddr.auth = this.user + ':' + this.pass;
+    this.oxaddr.username = this.user;
+    this.oxaddr.password = this.pass;
   } else {
-    this.oxaddr.auth = '';
+    this.oxaddr.username = '';
+    this.oxaddr.password = '';
   }
 };
 
@@ -96,7 +183,7 @@ OnvifServicePtz.prototype.setAuth = function (user, pass) {
 * Method: getNodes([callback])
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getNodes = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tptz:GetNodes/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetNodes', soap).then((result) => {
@@ -130,7 +217,7 @@ OnvifServicePtz.prototype.getNodes = function (callback) {
 *   - NodeToken | String | required | a token of the targeted PTZ node
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getNode = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -168,7 +255,7 @@ OnvifServicePtz.prototype.getNode = function (params, callback) {
 * Method: getConfigurations([callback])
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getConfigurations = function (callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     const soap_body = '<tptz:GetConfigurations/>';
     const soap = this._createRequestSoap(soap_body);
     mOnvifSoap.requestCommand(this.oxaddr, 'GetConfigurations', soap).then((result) => {
@@ -205,7 +292,7 @@ OnvifServicePtz.prototype.getConfigurations = function (callback) {
 * No device I own does not work well for now.
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getConfiguration = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -245,7 +332,7 @@ OnvifServicePtz.prototype.getConfiguration = function (params, callback) {
 *   - ConfigurationToken | String | required | a token of the targeted PTZ node
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getConfigurationOptions = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -286,7 +373,7 @@ OnvifServicePtz.prototype.getConfigurationOptions = function (params, callback) 
 *   - ProfileToken | String | required |
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getStatus = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -338,7 +425,7 @@ OnvifServicePtz.prototype.getStatus = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.continuousMove = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -356,9 +443,10 @@ OnvifServicePtz.prototype.continuousMove = function (params, callback) {
     }
 
     const klist = ['x', 'y', 'z'];
+    const velocity = params['Velocity'] || {};
     for(let i=0; i<klist.length; i++) {
       const k = klist[i];
-      const v = params['Velocity'][k];
+      const v = velocity[k];
       if((err_msg = mOnvifSoap.isInvalidValue(v, 'float'))) {
         reject(new Error('The "' + k + '" property was invalid: ' + err_msg));
         return;
@@ -376,13 +464,13 @@ OnvifServicePtz.prototype.continuousMove = function (params, callback) {
     soap_body += '<tptz:ContinuousMove>';
     soap_body +=   '<tptz:ProfileToken>' + mOnvifSoap.escapeXml(params['ProfileToken']) + '</tptz:ProfileToken>';
     soap_body +=   '<tptz:Velocity>';
-    soap_body +=     '<tt:PanTilt x="' + params['Velocity']['x'] + '" y="' + params['Velocity']['y'] + '"></tt:PanTilt>';
-    if(params['Velocity']['z']) {
-      soap_body +=     '<tt:Zoom x="' + params['Velocity']['z'] + '"></tt:Zoom>';
+    soap_body +=     '<tt:PanTilt x="' + velocity['x'] + '" y="' + velocity['y'] + '"></tt:PanTilt>';
+    if(velocity['z']) {
+      soap_body +=     '<tt:Zoom x="' + velocity['z'] + '"></tt:Zoom>';
     }
     soap_body +=   '</tptz:Velocity>';
     if(params['Timeout']) {
-      soap_body += '<tptz:Timeout>PT' + params['Timeout'] + 'S</tptz:Timeout>';
+      soap_body += '<tptz:Timeout>PT' + Number(params['Timeout']) + 'S</tptz:Timeout>';
     }
     soap_body += '</tptz:ContinuousMove>';
     const soap = this._createRequestSoap(soap_body);
@@ -423,7 +511,7 @@ OnvifServicePtz.prototype.continuousMove = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.absoluteMove = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -441,24 +529,26 @@ OnvifServicePtz.prototype.absoluteMove = function (params, callback) {
     }
 
     const klist = ['x', 'y', 'z'];
+    const position = params['Position'];
 
     for(let i=0; i<klist.length; i++) {
       const k = klist[i];
-      const v = params['Position'][k];
+      const v = position[k];
       if((err_msg = mOnvifSoap.isInvalidValue(v, 'float'))) {
         reject(new Error('The "' + k + '" property was invalid: ' + err_msg));
         return;
       }
     }
 
-    if('Speed' in params) {
-      if((err_msg = mOnvifSoap.isInvalidValue(params['Speed'], 'object'))) {
+    const speed = params['Speed'];
+    if(speed) {
+      if((err_msg = mOnvifSoap.isInvalidValue(speed, 'object'))) {
         reject(new Error('The "Speed" property was invalid: ' + err_msg));
         return;
       }
       for(let i=0; i<klist.length; i++) {
         const k = klist[i];
-        const v = params['Speed'][k];
+        const v = speed[k];
         if((err_msg = mOnvifSoap.isInvalidValue(v, 'float'))) {
           reject(new Error('The "' + k + '" property was invalid: ' + err_msg));
           return;
@@ -471,14 +561,14 @@ OnvifServicePtz.prototype.absoluteMove = function (params, callback) {
     soap_body +=   '<tptz:ProfileToken>' + mOnvifSoap.escapeXml(params['ProfileToken']) + '</tptz:ProfileToken>';
 
     soap_body +=   '<tptz:Position>';
-    soap_body +=     '<tt:PanTilt x="' + params['Position']['x'] + '" y="' + params['Position']['y'] + '" />';
-    soap_body +=     '<tt:Zoom x="' + params['Position']['z'] + '"/>';
+    soap_body +=     '<tt:PanTilt x="' + position['x'] + '" y="' + position['y'] + '" />';
+    soap_body +=     '<tt:Zoom x="' + position['z'] + '"/>';
     soap_body +=   '</tptz:Position>';
 
-    if(params['Speed']) {
+    if(speed) {
       soap_body +=   '<tptz:Speed>';
-      soap_body +=     '<tt:PanTilt x="' + params['Speed']['x'] + '" y="' + params['Speed']['y'] + '" />';
-      soap_body +=     '<tt:Zoom x="' + params['Speed']['z'] + '"/>';
+      soap_body +=     '<tt:PanTilt x="' + speed['x'] + '" y="' + speed['y'] + '" />';
+      soap_body +=     '<tt:Zoom x="' + speed['z'] + '"/>';
       soap_body +=   '</tptz:Speed>';
     }
 
@@ -522,7 +612,7 @@ OnvifServicePtz.prototype.absoluteMove = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.relativeMove = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -590,7 +680,7 @@ OnvifServicePtz.prototype.relativeMove = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.stop = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -657,7 +747,7 @@ OnvifServicePtz.prototype.stop = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.gotoHomePosition = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -712,7 +802,7 @@ OnvifServicePtz.prototype.gotoHomePosition = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.setHomePosition = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -760,7 +850,7 @@ OnvifServicePtz.prototype.setHomePosition = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.setPreset = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -787,18 +877,20 @@ OnvifServicePtz.prototype.setPreset = function (params, callback) {
     }
 
     if(!('PresetToken' in params) && !('PresetName' in params)) {
-      reject('Either the "ProfileToken" or the "PresetName" property must be specified.');
+      reject(new Error('Either the "PresetToken" or the "PresetName" property must be specified.'));
       return;
     }
 
     let soap_body = '';
     soap_body += '<tptz:SetPreset>';
     soap_body +=   '<tptz:ProfileToken>' + mOnvifSoap.escapeXml(params['ProfileToken']) + '</tptz:ProfileToken>';
-    if('PresetToken' in params) {
-      soap_body += '<tptz:PresetToken>' + mOnvifSoap.escapeXml(params['PresetToken']) + '</tptz:PresetToken>';
+    const presetToken = params['PresetToken'];
+    if(presetToken !== undefined) {
+      soap_body += '<tptz:PresetToken>' + mOnvifSoap.escapeXml(presetToken) + '</tptz:PresetToken>';
     }
-    if('PresetName' in params) {
-      soap_body +=   '<tptz:PresetName>' + mOnvifSoap.escapeXml(params['PresetName']) + '</tptz:PresetName>';
+    const presetName = params['PresetName'];
+    if(presetName !== undefined) {
+      soap_body +=   '<tptz:PresetName>' + mOnvifSoap.escapeXml(presetName) + '</tptz:PresetName>';
     }
     soap_body += '</tptz:SetPreset>';
     const soap = this._createRequestSoap(soap_body);
@@ -830,7 +922,7 @@ OnvifServicePtz.prototype.setPreset = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.getPresets = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -882,7 +974,7 @@ OnvifServicePtz.prototype.getPresets = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.gotoPreset = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -900,14 +992,15 @@ OnvifServicePtz.prototype.gotoPreset = function (params, callback) {
     }
 
     const klist = ['x', 'y', 'z'];
-    if('Speed' in params) {
-      if((err_msg = mOnvifSoap.isInvalidValue(params['Speed'], 'object'))) {
+    const speed = typeof params['Speed'] === 'object' && params['Speed'] !== null ? params['Speed'] : null;
+    if(speed) {
+      if((err_msg = mOnvifSoap.isInvalidValue(speed, 'object'))) {
         reject(new Error('The "Speed" property was invalid: ' + err_msg));
         return;
       }
       for(let i=0; i<klist.length; i++) {
         const k = klist[i];
-        const v = params['Speed'][k];
+        const v = speed[k];
         if((err_msg = mOnvifSoap.isInvalidValue(v, 'float'))) {
           reject(new Error('The "' + k + '" property was invalid: ' + err_msg));
           return;
@@ -918,11 +1011,11 @@ OnvifServicePtz.prototype.gotoPreset = function (params, callback) {
     let soap_body = '';
     soap_body += '<tptz:GotoPreset>';
     soap_body +=   '<tptz:ProfileToken>' + mOnvifSoap.escapeXml(params['ProfileToken']) + '</tptz:ProfileToken>';
-    soap_body +=   '<tptz:PresetToken>' + mOnvifSoap.escapeXml(params['PresetToken']) + '</tptz:PresetToken>';
-    if(params['Speed']) {
+    soap_body +=   '<tptz:PresetToken>' + mOnvifSoap.escapeXml(params['PresetToken'] || '') + '</tptz:PresetToken>';
+    if(speed) {
       soap_body +=   '<tptz:Speed>';
-      soap_body +=     '<tt:PanTilt x="' + params['Speed']['x'] + '" y="' + params['Speed']['y'] + '" />';
-      soap_body +=     '<tt:Zoom x="' + params['Speed']['z'] + '"/>';
+      soap_body +=     '<tt:PanTilt x="' + speed['x'] + '" y="' + speed['y'] + '" />';
+      soap_body +=     '<tt:Zoom x="' + speed['z'] + '"/>';
       soap_body +=   '</tptz:Speed>';
     }
     soap_body += '</tptz:GotoPreset>';
@@ -957,7 +1050,7 @@ OnvifServicePtz.prototype.gotoPreset = function (params, callback) {
 * }
 * ---------------------------------------------------------------- */
 OnvifServicePtz.prototype.removePreset = function (params, callback) {
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<SoapCommandResult>((resolve, reject) => {
     let err_msg = '';
     if((err_msg = mOnvifSoap.isInvalidValue(params, 'object'))) {
       reject(new Error('The value of "params" was invalid: ' + err_msg));
@@ -977,7 +1070,7 @@ OnvifServicePtz.prototype.removePreset = function (params, callback) {
     let soap_body = '';
     soap_body += '<tptz:RemovePreset>';
     soap_body +=   '<tptz:ProfileToken>' + mOnvifSoap.escapeXml(params['ProfileToken']) + '</tptz:ProfileToken>';
-    soap_body +=   '<tptz:PresetToken>' + mOnvifSoap.escapeXml(params['PresetToken']) + '</tptz:PresetToken>';
+    soap_body +=   '<tptz:PresetToken>' + mOnvifSoap.escapeXml(params['PresetToken'] || '') + '</tptz:PresetToken>';
     soap_body += '</tptz:RemovePreset>';
     const soap = this._createRequestSoap(soap_body);
 
@@ -999,3 +1092,4 @@ OnvifServicePtz.prototype.removePreset = function (params, callback) {
 };
 
 module.exports = OnvifServicePtz;
+

@@ -1,137 +1,138 @@
-html,body {
-    font-family: "游ゴシック", YuGothic, "ヒラギノ角ゴ Pro", "Hiragino Kaku Gothic Pro", "メイリオ", "Meiryo", sans-serif;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
+@import "bootstrap/dist/css/bootstrap.css";
+@import "bootstrap/dist/css/bootstrap-theme.css";
+
+html,
+body {
+  font-family: "游ゴシック", YuGothic, "ヒラギノ角ゴ Pro", "Hiragino Kaku Gothic Pro", "メイリオ", "Meiryo", sans-serif;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
+
 h1 {
-    margin: 0;
+  margin: 0;
 }
-/*
+
 #main-wrapper {
-    margin-top: 5em;
+  margin-top: 1em;
 }
-*/
-#main-wrapper {
-    margin-top: 1em;
-}
-/*
-#device {
-    width: 20em;
-}
-#user {
-    width: 8em;
-}
-#pass {
-    width: 8em;
-}
-*/
+
 #connected-device {
-    position: relative;
-    background-color: #000000;
-    overflow: hidden;
-    display: none;
+  position: relative;
+  background-color: #000000;
+  overflow: hidden;
+  display: none;
 }
+
 #connected-device img.snapshot {
-    position: absolute;
+  position: absolute;
 }
+
 #connected-device div.ptz-spd-ctl-box {
-    position: absolute;
-    bottom: 10px;
-    left: 1em;
-    background-color: rgba(255, 255, 255, 0.5);
-    border-radius: 0.3em;
+  position: absolute;
+  bottom: 10px;
+  left: 1em;
+  background-color: rgba(255, 255, 255, 0.5);
+  border-radius: 0.3em;
 }
+
 #connected-device div.ptz-spd-ctl-box span.label {
-    display: block;
-    margin-top: 0.3em;
+  display: block;
+  margin-top: 0.3em;
 }
+
 #connected-device div.device-info-box {
-    position: absolute;
-    top: 1em;
-    right: 1em;
-    background-color: rgba(255, 255, 255, 0.5);
-    padding: 0.3em 0.5em;
-    border-radius: 0.3em;
+  position: absolute;
+  top: 1em;
+  right: 1em;
+  background-color: rgba(255, 255, 255, 0.5);
+  padding: 0.3em 0.5em;
+  border-radius: 0.3em;
+  max-width: 350px;
 }
+
 #connected-device div.disconnect-box {
-    position: absolute;
-    bottom: 10px;
-    right: 1em;
+  position: absolute;
+  bottom: 10px;
+  right: 1em;
 }
+
 #connected-device div.ptz-ctl-box {
-    position: absolute;
-    width: 160px;
-    height: 160px;
-    bottom: 80px;
-    left: 1em;
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  bottom: 80px;
+  left: 1em;
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box {
-    width: 160px;
-    height: 160px;
-    border-radius: 80px;
-    background-color: #ffffff;
-    color: #000000;
-    position: absolute;
-    opacity: 0.4;
+  width: 160px;
+  height: 160px;
+  border-radius: 80px;
+  background-color: #ffffff;
+  color: #000000;
+  position: absolute;
+  opacity: 0.4;
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box:hover {
-    opacity: 0.6;
+  opacity: 0.6;
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box button.ptz-goto-home {
-    width: 50px;
-    height: 50px;
-    border-width: 0px;
-    border-radius: 25px;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    -webkit-transform: translate(-50%, -50%);
-    transform: translate(-50%, -50%);
+  width: 50px;
+  height: 50px;
+  border-width: 0;
+  border-radius: 25px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box .left {
-    position: absolute;
-    left: 10px;
-    top: 74px;
+  position: absolute;
+  left: 10px;
+  top: 74px;
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box .right {
-    position: absolute;
-    right: 10px;
-    top: 74px;
+  position: absolute;
+  right: 10px;
+  top: 74px;
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box .up {
-    position: absolute;
-    left: 74px;
-    top: 10px;
+  position: absolute;
+  left: 74px;
+  top: 10px;
 }
+
 #connected-device div.ptz-ctl-box div.ptz-pad-box .down {
-    position: absolute;
-    left: 74px;
-    top: 140px;
+  position: absolute;
+  left: 74px;
+  top: 140px;
 }
+
 #connected-device div.disconnect-box button[name="disconnect"] {
-    opacity: 0.5 !important;
+  opacity: 0.5 !important;
 }
+
 #connected-device div.disconnect-box button[name="disconnect"]:hover {
-    opacity: 1.0 !important;
+  opacity: 1 !important;
 }
-@media (max-width: 768px) {
-    #connected-device div.ptz-spd-ctl-box {
-        display: none;
-    }
-    #connected-device div.ptz-ctl-box {
-        bottom: 10px;
-    }
-}
+
 #connected-device div.ptz-zom-ctl-box {
-    position: absolute;
-    bottom: 120px;
-    right: 1em;
-    opacity: 0.4;
+  position: absolute;
+  bottom: 120px;
+  right: 1em;
+  opacity: 0.4;
 }
+
 #connected-device div.ptz-zom-ctl-box:hover {
-    opacity: 0.6;
+  opacity: 0.6;
 }
+
 .hide-controls-btn {
   position: absolute;
   top: 10px;
@@ -139,17 +140,17 @@ h1 {
   z-index: 1000;
   opacity: 0.7;
 }
+
 .hide-controls-btn:hover {
   opacity: 1;
 }
+
 .hide-controls-btn:focus,
 .hide-controls-btn:active,
 .hide-controls-btn.active {
   opacity: 0.7;
 }
-#connected-device {
-  position: relative;
-}
+
 .controls-hidden .device-info-box,
 .controls-hidden .ptz-ctl-box,
 .controls-hidden .ptz-spd-ctl-box,
@@ -158,99 +159,105 @@ h1 {
   display: none;
 }
 
-/* Hide the second button by default */
 .hide-controls-btn-2 {
-    display: none;
-    position: absolute;
-    top: 10px;
-    left: 50px;
-    z-index: 1000;
-    opacity: 0.7;
+  display: none;
+  position: absolute;
+  top: 10px;
+  left: 50px;
+  z-index: 1000;
+  opacity: 0.7;
 }
 
-/* Show the second button when controls are hidden */
 .controls-hidden .hide-controls-btn-2 {
-    display: block;
+  display: block;
 }
 
 .hide-controls-btn-2:hover {
-    opacity: 1;
+  opacity: 1;
 }
 
 .hide-controls-btn-2:focus,
 .hide-controls-btn-2:active {
-    opacity: 0.7;
+  opacity: 0.7;
 }
 
-/* Stream Controls */
 .stream-controls {
-    margin-top: 0.5em;
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    flex-wrap: wrap;
+  margin-top: 0.5em;
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  flex-wrap: wrap;
 }
 
 .stream-controls .profile-select {
-    width: auto;
-    max-width: 200px;
-    display: inline-block;
-    font-size: 12px;
-    padding: 3px 8px;
-    height: auto;
+  width: auto;
+  max-width: 200px;
+  display: inline-block;
+  font-size: 12px;
+  padding: 3px 8px;
+  height: auto;
 }
 
 .stream-controls .stream-mode-btns {
-    display: inline-flex;
+  display: inline-flex;
 }
 
 .stream-controls .stream-mode-btns .btn {
-    font-size: 11px;
-    padding: 3px 8px;
+  font-size: 11px;
+  padding: 3px 8px;
 }
 
 .stream-controls .show-streams-btn {
-    padding: 3px 8px;
+  padding: 3px 8px;
 }
 
-/* Hide stream controls when controls are hidden */
 .controls-hidden .stream-controls {
-    display: none;
+  display: none;
 }
 
-/* Streams Modal */
 #streams-modal .stream-urls-list .form-group {
-    margin-bottom: 15px;
+  margin-bottom: 15px;
 }
 
 #streams-modal .stream-urls-list label {
-    font-weight: bold;
-    margin-bottom: 5px;
+  font-weight: bold;
+  margin-bottom: 5px;
 }
 
 #streams-modal .stream-urls-list input.form-control {
-    font-family: monospace;
-    font-size: 12px;
+  font-family: monospace;
+  font-size: 12px;
 }
 
 #streams-modal .copy-url-btn .glyphicon {
-    font-size: 12px;
+  font-size: 12px;
 }
 
-/* Responsive adjustments */
+.modal.in {
+  display: block;
+  opacity: 1;
+}
+
+.modal.in .modal-dialog {
+  transform: translate(0, 0);
+}
+
 @media (max-width: 768px) {
-    .stream-controls {
-        flex-direction: column;
-        align-items: flex-start;
-    }
+  #connected-device div.ptz-spd-ctl-box {
+    display: none;
+  }
 
-    .stream-controls .profile-select {
-        max-width: 100%;
-        width: 100%;
-    }
-}
+  #connected-device div.ptz-ctl-box {
+    bottom: 10px;
+  }
 
-/* Device info box adjustments for new controls */
-#connected-device div.device-info-box {
-    max-width: 350px;
+  .stream-controls {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stream-controls .profile-select {
+    max-width: 100%;
+    width: 100%;
+  }
 }

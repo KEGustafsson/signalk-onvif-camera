@@ -1,12 +1,13 @@
 {
   "name": "signalk-onvif-camera",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Signal K Onvif Camera Interface",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
-    "index.js",
-    "lib/",
-    "public/"
+    "dist/",
+    "public/",
+    "doc/"
   ],
   "engines": {
     "node": ">=18.0.0"
@@ -15,11 +16,12 @@
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix",
-    "prepublishOnly": "npm run lint && npm test && npm run build",
-    "clean": "node -e \"require('fs').rmSync('./public',{recursive:true,force:true})\"",
+    "lint:fix": "eslint . --ext .js,.ts --fix",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build",
+    "clean": "node -e \"require('fs').rmSync('./dist',{recursive:true,force:true});require('fs').rmSync('./public',{recursive:true,force:true})\"",
     "dev": "vite",
-    "build": "npm run clean && vite build",
+    "build": "npm run clean && tsc -p tsconfig.build.json && vite build",
     "preview": "vite preview"
   },
   "signalk": {
@@ -42,8 +44,16 @@
     "xml2js": "^0.6.2"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/jquery": "^4.0.0",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.1",
+    "@typescript-eslint/parser": "^8.57.1",
+    "bootstrap": "^3.4.1",
     "eslint": "^8.57.0",
     "jest": "^29.7.0",
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3",
     "vite": "^6.0.5"
   }
 }
