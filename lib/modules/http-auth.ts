@@ -65,6 +65,25 @@ function isSessionAlgorithm(algorithm: string): boolean {
   return algorithm.toUpperCase().endsWith('-SESS');
 }
 
+function getHashAlgorithmName(algorithm: string | undefined): string {
+  const normalized = (algorithm || 'MD5').toUpperCase();
+  const digestAlgorithm = normalized.endsWith('-SESS')
+    ? normalized.slice(0, -5)
+    : normalized;
+  const candidates = Array.from(new Set([
+    digestAlgorithm.toLowerCase(),
+    digestAlgorithm.toLowerCase().replace(/^md-?5$/, 'md5'),
+    digestAlgorithm.toLowerCase().replace(/^sha-(\d+)$/, 'sha$1'),
+    digestAlgorithm.toLowerCase().replace(/^sha-(\d+)-(\d+)$/, 'sha$1-$2')
+  ]));
+  const supportedAlgorithms = mCrypto.getHashes();
+  const hashAlgorithm = candidates.find((candidate) => supportedAlgorithms.includes(candidate));
+  if (!hashAlgorithm) {
+    throw new Error('Unsupported digest algorithm: ' + digestAlgorithm);
+  }
+  return hashAlgorithm;
+}
+
 /* ------------------------------------------------------------------
 * Constructor: OnvifHttpAuth()
 * ---------------------------------------------------------------- */
@@ -195,13 +214,7 @@ OnvifHttpAuth.prototype._createCnonce = function (digit: number): string {
 };
 
 OnvifHttpAuth.prototype._createHash = function (algo: string | undefined, data: string): string {
-  let hash = null;
-  const normalized = (algo || 'MD5').toUpperCase();
-  if(normalized.startsWith('MD5')) {
-    hash = mCrypto.createHash('md5');
-  } else {
-    hash = mCrypto.createHash('sha256');
-  }
+  const hash = mCrypto.createHash(getHashAlgorithmName(algo));
   hash.update(data, 'utf8');
   return hash.digest('hex');
 };

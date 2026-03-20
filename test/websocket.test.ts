@@ -250,6 +250,25 @@ describe('WebSocket message handling', () => {
     });
   });
 
+  test('should reject connect when websocket request lacks WRITE permission', async () => {
+    mockApp.securityStrategy = {
+      shouldAllowRequest: jest.fn<boolean, [unknown, unknown?]>((_request, permission) => permission === 'READ')
+    };
+
+    const socket = connectSocket();
+    sendMessage(socket, {
+      method: 'connect',
+      params: { address: '10.0.0.20' }
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    expect(mockApp.securityStrategy.shouldAllowRequest).toHaveBeenCalledWith(expect.anything(), 'WRITE');
+    expect(lastSent(socket)).toEqual({
+      id: 'connect',
+      error: 'Unauthorized'
+    });
+  });
+
   describe('invalid JSON', () => {
     test('should send error response for malformed message', () => {
       const socket = connectSocket();
@@ -365,6 +384,37 @@ describe('WebSocket message handling', () => {
         jest.useRealTimers();
       }
     });
+
+    test('replaces stale discovered devices with the latest probe results', async () => {
+      const socket = connectSocket();
+      mockStartProbe
+        .mockResolvedValueOnce([
+          { xaddrs: ['http://10.0.0.30/onvif/device_service'], name: 'Camera A' },
+          { xaddrs: ['http://10.0.0.31/onvif/device_service'], name: 'Camera B' }
+        ])
+        .mockResolvedValueOnce([
+          { xaddrs: ['http://10.0.0.30/onvif/device_service'], name: 'Camera A' }
+        ]);
+
+      sendMessage(socket, { method: 'startDiscovery' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      expect(lastSent(socket)).toEqual({
+        id: 'startDiscovery',
+        result: {
+          '10.0.0.30': { address: '10.0.0.30', name: 'Camera A' },
+          '10.0.0.31': { address: '10.0.0.31', name: 'Camera B' }
+        }
+      });
+
+      sendMessage(socket, { method: 'startDiscovery' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      expect(lastSent(socket)).toEqual({
+        id: 'startDiscovery',
+        result: {
+          '10.0.0.30': { address: '10.0.0.30', name: 'Camera A' }
+        }
+      });
+    });
   });
 
   describe('connect', () => {
@@ -437,6 +487,39 @@ describe('WebSocket message handling', () => {
           address: '10.0.0.21',
           user: '',
           pass: ''
+        }
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+      const device = mockDeviceInstances[0];
+      expect(device.setAuth).toHaveBeenCalledWith('', '');
+      expect(lastSent(socket).id).toBe('connect');
+    });
+
+    test('uses blank per-camera credentials instead of inheriting global defaults', async () => {
+      plugin.stop();
+      plugin.start({
+        snapshotInterval: 100,
+        discoverOnStart: false,
+        autoDiscoveryInterval: 0,
+        userName: 'configured-user',
+        password: 'configured-pass',
+        cameras: [
+          { address: '10.0.0.22', userName: '', password: '' }
+        ]
+      });
+      const socket = connectSocket();
+      mockStartProbe.mockResolvedValue([{
+        xaddrs: ['http://10.0.0.22/onvif/device_service'],
+        name: 'Camera'
+      }]);
+
+      sendMessage(socket, { method: 'startDiscovery' });
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      sendMessage(socket, {
+        method: 'connect',
+        params: {
+          address: '10.0.0.22'
         }
       });
       await new Promise<void>((resolve) => setTimeout(resolve, 10));

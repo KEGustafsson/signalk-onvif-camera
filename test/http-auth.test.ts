@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { createHash } from 'crypto';
 import type { IncomingMessage } from 'http';
 
 import type { HttpAuthRequestOptions } from '../lib/types';
@@ -185,5 +186,18 @@ describe('http-auth module', () => {
     const retryAuthorization = requestInvocations[1].options.headers as { Authorization?: string };
     expect(retryAuthorization.Authorization).toContain('Digest ');
     expect(retryAuthorization.Authorization).toContain('username="user-a"');
+  });
+
+  test('uses the digest challenge hash algorithm instead of forcing sha256', () => {
+    const auth = require('../lib/modules/http-auth') as {
+      _createHash(algo: string | undefined, data: string): string;
+    };
+
+    expect(auth._createHash('SHA-512', 'camera-auth')).toBe(
+      createHash('sha512').update('camera-auth', 'utf8').digest('hex')
+    );
+    expect(auth._createHash('SHA-512-SESS', 'camera-auth')).toBe(
+      createHash('sha512').update('camera-auth', 'utf8').digest('hex')
+    );
   });
 });

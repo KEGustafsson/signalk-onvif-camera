@@ -1,5 +1,11 @@
 import { $, DomCollection } from './dom';
 import { buildConnectRequest, hasSelectableAddress } from './connect';
+import {
+  buildDiscoveryOptions,
+  DEVICE_SELECT_PLACEHOLDER,
+  type DeviceSummaryMap,
+  resolveSelectedDiscoveryAddress
+} from './discovery';
 import { normalizePtzPadVector } from './ptz';
 import {
   createSnapshotRequestId,
@@ -9,6 +15,12 @@ import {
   isExpectedSnapshotResponse,
   normalizeSnapshotInterval
 } from './snapshot';
+import {
+  getStreamModalValues,
+  getStreamModeControlState,
+  shouldStartMjpegStream,
+  type StreamUrls
+} from './stream';
 
 (function () {
   let snapshotInterval = 100;
@@ -27,18 +39,6 @@ import {
     requestId?: unknown;
     result?: unknown;
     error?: unknown;
-  }
-
-  interface DeviceSummary {
-    address: string;
-    name: string;
-  }
-
-  type DeviceSummaryMap = Record<string, DeviceSummary>;
-
-  interface StreamUrls {
-    rtsp?: string;
-    http?: string;
   }
 
   interface ManagerElements {
@@ -275,6 +275,7 @@ import {
           this.updateButtonGroupState(element);
         }
       });
+      this.syncStreamModeControls();
     }
 
     private adjustSize(): void {
@@ -580,9 +581,7 @@ import {
       this.mjpegUrl = null;
       this.snapshotUrl = null;
       this.pendingConnectAddress = null;
-
-      $('input[name="stream-mode"][value="snapshot"]').prop('checked', true).parent().addClass('active');
-      $('input[name="stream-mode"][value="mjpeg"]').parent().removeClass('active');
+      this.syncStreamModeControls();
     }
 
     private connectDevice(): void {
@@ -613,39 +612,18 @@ import {
     private startDiscoveryCallback(data: ManagerResponse): void {
       const devices = toDeviceSummaryMap(data.result);
       const currentSelection = getElementValue(this.el.sel_dev);
-      const existingAddresses: Record<string, boolean> = {};
-      const placeholders = ['Select a device', 'now searching...'];
+      const discoveryOptions = buildDiscoveryOptions(devices);
+      const count = discoveryOptions.length;
 
-      this.el.sel_dev.find('option').each((_index, element) => {
-        const option = $(element);
-        const value = getElementValue(option);
-        const text = option.text();
-        if (value && !placeholders.includes(value) && !placeholders.includes(text)) {
-          existingAddresses[value] = true;
-        }
+      this.el.sel_dev.empty();
+      this.el.sel_dev.append($(`<option>${DEVICE_SELECT_PLACEHOLDER}</option>`));
+      discoveryOptions.forEach((option) => {
+        const optionEl = $('<option></option>');
+        optionEl.val(option.value);
+        optionEl.text(option.label);
+        this.el.sel_dev.append(optionEl);
       });
-
-      const isFirstPopulation = Object.keys(existingAddresses).length === 0;
-      if (isFirstPopulation) {
-        this.el.sel_dev.empty();
-        this.el.sel_dev.append($('<option>Select a device</option>'));
-      }
-
-      let count = Object.keys(existingAddresses).length;
-      Object.keys(devices).forEach((key) => {
-        const device = devices[key];
-        if (device.address && !existingAddresses[device.address]) {
-          const optionEl = $('<option></option>');
-          optionEl.val(device.address);
-          optionEl.text(device.name + ' (' + device.address + ')');
-          this.el.sel_dev.append(optionEl);
-          count++;
-        }
-      });
-
-      if (currentSelection && !placeholders.includes(currentSelection)) {
-        this.el.sel_dev.val(currentSelection);
-      }
+      this.el.sel_dev.val(resolveSelectedDiscoveryAddress(currentSelection, devices));
 
       const pendingAddress = this.pendingConnectAddress;
       if (pendingAddress && devices[pendingAddress]) {
@@ -691,6 +669,7 @@ import {
         this.snapshotUrl = result['snapshotUrl'] ? location.origin + toStringValue(result['snapshotUrl']) : null;
         this.clearSnapshotTimer();
         this.clearActiveSnapshotRequest();
+        this.syncStreamModeControls();
         this.el.btn_con.text('Disconnect');
         this.el.frm_con.hide();
         this.el.div_pnl.show();
@@ -771,10 +750,29 @@ import {
       }
     }
 
+    private syncStreamModeControls(): void {
+      const controlState = getStreamModeControlState(this.stream_mode);
+      const snapshotInput = $('input[name="stream-mode"][value="snapshot"]').get(0);
+      const mjpegInput = $('input[name="stream-mode"][value="mjpeg"]').get(0);
+
+      if (snapshotInput instanceof HTMLInputElement) {
+        snapshotInput.checked = controlState.snapshotChecked;
+        this.updateButtonGroupState(snapshotInput);
+      }
+
+      if (mjpegInput instanceof HTMLInputElement) {
+        mjpegInput.checked = controlState.mjpegChecked;
+        if (controlState.mjpegChecked) {
+          this.updateButtonGroupState(mjpegInput);
+        }
+      }
+    }
+
     private onStreamModeChange(event: Event): void {
       const target = event.target instanceof HTMLInputElement ? event.target : null;
       const selectedMode = target ? String(target.value || 'snapshot') : 'snapshot';
       this.stream_mode = selectedMode === 'mjpeg' ? 'mjpeg' : 'snapshot';
+      this.syncStreamModeControls();
       this.clearSnapshotTimer();
       this.clearActiveSnapshotRequest();
 
@@ -814,12 +812,11 @@ import {
     }
 
     private showStreamsModal(): void {
-      if (this.streams) {
-        this.el.mdl_str.find('.stream-url-rtsp').val(this.streams.rtsp || 'Not available');
-        this.el.mdl_str.find('.stream-url-http').val(this.streams.http || 'Not available');
-      }
-      this.el.mdl_str.find('.stream-url-mjpeg').val(this.mjpegUrl || 'Not available');
-      this.el.mdl_str.find('.stream-url-snapshot').val(this.snapshotUrl || 'Not available');
+      const modalValues = getStreamModalValues(this.streams, this.mjpegUrl, this.snapshotUrl);
+      this.el.mdl_str.find('.stream-url-rtsp').val(modalValues.rtsp);
+      this.el.mdl_str.find('.stream-url-http').val(modalValues.http);
+      this.el.mdl_str.find('.stream-url-mjpeg').val(modalValues.mjpeg);
+      this.el.mdl_str.find('.stream-url-snapshot').val(modalValues.snapshot);
       showBootstrapModal(this.el.mdl_str);
     }
 
@@ -832,7 +829,12 @@ import {
     private showConnectedDeviceInfo(address: string, data: JsonRecord): void {
       this.el.div_pnl.find('span.name').text(toStringValue(data['Manufacturer']) + ' ' + toStringValue(data['Model']));
       this.el.div_pnl.find('span.address').text(address);
-      this.fetchSnapshot();
+      this.syncStreamModeControls();
+      if (shouldStartMjpegStream(this.stream_mode, this.mjpegUrl)) {
+        this.startMjpegStream();
+      } else {
+        this.fetchSnapshot();
+      }
     }
 
     private fetchSnapshot(): void {

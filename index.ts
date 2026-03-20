@@ -249,6 +249,11 @@ interface DeviceSummaryMap {
   [address: string]: DiscoveryResult;
 }
 
+interface RegisteredDiscoveryDevice extends DiscoveryResult {
+  device: OnvifDeviceLike;
+  isNew: boolean;
+}
+
 interface HttpJsonResponse {
   error?: string;
   streams?: Array<{
@@ -349,6 +354,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
   let cameraConfigs: Record<string, CameraConfig> = {};
   let devices: Record<string, OnvifDeviceLike> = {};
   let deviceNames: Record<string, string> = {};
+  let discoveredDevices: DeviceSummaryMap = {};
   let discoveryRetryTimer: TimerHandle | null = null;
   let discoveryPendingConns: WsSocket[] = [];
   const activeWsConnections = new Set<WsSocket>();
@@ -366,6 +372,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     enableSignalKIntegration = options.enableSignalKIntegration || false;
     discoverOnStart = options.discoverOnStart !== false; // Default true
     startupDiscoveryDelay = options.startupDiscoveryDelay || 5;
+    discoveredDevices = {};
 
     // Build camera-specific config map
     cameraConfigs = {};
@@ -390,8 +397,8 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
           cameraConfigs[cam.address] = {
             name: cam.name || cam.address,
             nickname: sanitizedNickname,
-            userName: cam.userName || userName,
-            password: cam.password || password
+            userName: typeof cam.userName === 'string' ? cam.userName : userName,
+            password: typeof cam.password === 'string' ? cam.password : password
           };
         }
       });
@@ -509,40 +516,29 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
           if (!pluginRunning) {
             return;
           }
-          deviceList.forEach((device) => {
-            try {
-              const odevice = new onvif.OnvifDevice({
-                xaddr: device.xaddrs[0]
-              });
-              const addr = odevice.address;
-              const deviceName = (device.name || addr).replace(/%20/g, ' ');
+          const registeredDevices = replaceDiscoveredDevices(deviceList, 'Auto-discovery');
+          registeredDevices.forEach((registeredDevice) => {
+            if (registeredDevice.isNew) {
+              app.debug(`Auto-discovered new camera: ${registeredDevice.name} (${registeredDevice.address})`);
 
-              if (!devices[addr]) {
-                devices[addr] = odevice;
-                deviceNames[addr] = deviceName;
-                app.debug(`Auto-discovered new camera: ${deviceName} (${addr})`);
-
-                // Publish discovery to Signal K if enabled
-                if (enableSignalKIntegration && app.handleMessage) {
-                  const nickname = getCameraNickname(addr);
-                  app.handleMessage(plugin.id, {
-                    updates: [{
-                      source: { label: plugin.id },
-                      timestamp: new Date().toISOString(),
-                      values: [{
-                        path: `sensors.camera.${nickname}`,
-                        value: {
-                          address: addr,
-                          discovered: true,
-                          connected: false
-                        }
-                      }]
+              // Publish discovery to Signal K if enabled
+              if (enableSignalKIntegration && app.handleMessage) {
+                const nickname = getCameraNickname(registeredDevice.address);
+                app.handleMessage(plugin.id, {
+                  updates: [{
+                    source: { label: plugin.id },
+                    timestamp: new Date().toISOString(),
+                    values: [{
+                      path: `sensors.camera.${nickname}`,
+                      value: {
+                        address: registeredDevice.address,
+                        discovered: true,
+                        connected: false
+                      }
                     }]
-                  });
-                }
+                  }]
+                });
               }
-            } catch (error) {
-              app.debug(`Auto-discovery: error processing device: ${getErrorMessage(error)}`);
             }
           });
         })
@@ -569,62 +565,51 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
             return;
           }
           app.debug(`Startup discovery found ${deviceList.length} device(s)`);
-          deviceList.forEach((device) => {
-            try {
-              const odevice = new onvif.OnvifDevice({
-                xaddr: device.xaddrs[0]
+          const registeredDevices = replaceDiscoveredDevices(deviceList, 'Startup discovery');
+          registeredDevices.forEach(({ address: addr, name: deviceName, device: odevice, isNew }) => {
+            if (isNew) {
+              app.debug(`Startup discovered camera: ${deviceName} (${addr})`);
+            }
+
+            // Auto-connect pre-configured cameras and publish to Signal K
+            const camConfig = cameraConfigs[addr];
+            if (camConfig && enableSignalKIntegration) {
+              // Set auth and initialize device
+              odevice.setAuth(camConfig.userName, camConfig.password);
+              odevice.init((error, result) => {
+                if (!pluginRunning) {
+                  return;
+                }
+                if (error) {
+                  app.debug(`Failed to initialize camera ${addr}: ${error.message}`);
+                  return;
+                }
+                try {
+                  app.debug(`Auto-connected to pre-configured camera: ${addr}`);
+                  if (result) {
+                    publishCameraToSignalK(addr, result);
+                  }
+                } catch (publishError) {
+                  app.debug(`Error publishing camera ${addr} to Signal K: ${getErrorMessage(publishError)}`);
+                }
               });
-              const addr = odevice.address;
-              const deviceName = (device.name || addr).replace(/%20/g, ' ');
-
-              if (!devices[addr]) {
-                devices[addr] = odevice;
-                deviceNames[addr] = deviceName;
-                app.debug(`Startup discovered camera: ${deviceName} (${addr})`);
-              }
-
-              // Auto-connect pre-configured cameras and publish to Signal K
-              const camConfig = cameraConfigs[addr];
-              if (camConfig && enableSignalKIntegration) {
-                // Set auth and initialize device
-                odevice.setAuth(camConfig.userName, camConfig.password);
-                odevice.init((error, result) => {
-                  if (!pluginRunning) {
-                    return;
-                  }
-                  if (error) {
-                    app.debug(`Failed to initialize camera ${addr}: ${error.message}`);
-                    return;
-                  }
-                  try {
-                    app.debug(`Auto-connected to pre-configured camera: ${addr}`);
-                    if (result) {
-                      publishCameraToSignalK(addr, result);
+            } else if (enableSignalKIntegration && app.handleMessage) {
+              // Just publish discovery info for non-configured cameras
+              const nickname = getCameraNickname(addr);
+              app.handleMessage(plugin.id, {
+                updates: [{
+                  source: { label: plugin.id },
+                  timestamp: new Date().toISOString(),
+                  values: [{
+                    path: `sensors.camera.${nickname}`,
+                    value: {
+                      address: addr,
+                      discovered: true,
+                      connected: false
                     }
-                  } catch (publishError) {
-                    app.debug(`Error publishing camera ${addr} to Signal K: ${getErrorMessage(publishError)}`);
-                  }
-                });
-              } else if (enableSignalKIntegration && app.handleMessage) {
-                // Just publish discovery info for non-configured cameras
-                const nickname = getCameraNickname(addr);
-                app.handleMessage(plugin.id, {
-                  updates: [{
-                    source: { label: plugin.id },
-                    timestamp: new Date().toISOString(),
-                    values: [{
-                      path: `sensors.camera.${nickname}`,
-                      value: {
-                        address: addr,
-                        discovered: true,
-                        connected: false
-                      }
-                    }]
                   }]
-                });
-              }
-            } catch (error) {
-              app.debug(`Startup discovery: error processing device: ${getErrorMessage(error)}`);
+                }]
+              });
             }
           });
         })
@@ -670,6 +655,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     pluginRunning = false;
     devices = {};
     deviceNames = {};
+    discoveredDevices = {};
 
     if (autoDiscoveryTimer) {
       clearInterval(autoDiscoveryTimer);
@@ -801,13 +787,59 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
   function buildDeviceSummaryMap(): DeviceSummaryMap {
     const summaries: DeviceSummaryMap = {};
-    Object.keys(devices).forEach((addr) => {
+    Object.keys(discoveredDevices).forEach((addr) => {
       summaries[addr] = {
-        name: deviceNames[addr] || addr,
-        address: addr
+        name: discoveredDevices[addr].name,
+        address: discoveredDevices[addr].address
       };
     });
     return summaries;
+  }
+
+  function registerDiscoveredDevice(device: OnvifDiscoveryDevice, context: string): RegisteredDiscoveryDevice | null {
+    try {
+      const xaddr = device.xaddrs[0];
+      if (!xaddr) {
+        throw new Error('No device service address was provided.');
+      }
+
+      const odevice = new onvif.OnvifDevice({ xaddr });
+      const addr = odevice.address;
+      const deviceName = (device.name || addr).replace(/%20/g, ' ');
+      const isNew = !devices[addr];
+
+      if (isNew) {
+        devices[addr] = odevice;
+      }
+      deviceNames[addr] = deviceName;
+
+      return {
+        address: addr,
+        name: deviceName,
+        device: devices[addr] || odevice,
+        isNew
+      };
+    } catch (error) {
+      app.debug(`${context}: error processing device: ${getErrorMessage(error)}`);
+      return null;
+    }
+  }
+
+  function replaceDiscoveredDevices(deviceList: OnvifDiscoveryDevice[], context: string): RegisteredDiscoveryDevice[] {
+    const summaries: DeviceSummaryMap = {};
+    const registeredDevices = deviceList
+      .map((device) => registerDiscoveredDevice(device, context))
+      .filter((device): device is RegisteredDiscoveryDevice => device !== null);
+
+    registeredDevices.forEach((device) => {
+      summaries[device.address] = {
+        address: device.address,
+        name: device.name
+      };
+    });
+    discoveredDevices = summaries;
+
+    return registeredDevices;
   }
 
   function sendJsonResponse(res: HttpResponseLike, status: number, body: HttpJsonResponse): void {
@@ -865,6 +897,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
   function getWsPermission(method: WsMethodId): WsPermission {
     switch (method) {
+      case 'connect':
       case 'ptzMove':
       case 'ptzStop':
       case 'ptzHome':
@@ -1238,22 +1271,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
         if (!pluginRunning) {
           return;
         }
-        deviceList.forEach((device) => {
-          try {
-            const xaddr = device.xaddrs[0];
-            if (!xaddr) {
-              throw new Error('No device service address was provided.');
-            }
-            const odevice = new onvif.OnvifDevice({ xaddr });
-            const addr = odevice.address;
-            if (!devices[addr]) {
-              devices[addr] = odevice;
-            }
-            deviceNames[addr] = (device.name || addr).replace(/%20/g, ' ');
-          } catch (deviceError) {
-            app.debug('Discovery: error processing device:', getErrorMessage(deviceError));
-          }
-        });
+        replaceDiscoveredDevices(deviceList, 'Discovery');
         const res: WsResponse<DeviceSummaryMap> = { id: 'startDiscovery', result: buildDeviceSummaryMap() };
         const allConns = collectDiscoveryRecipients(conn);
         allConns.forEach((socketConn) => {
@@ -1266,7 +1284,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
         }
         const inProgress = onvif._probeInProgress;
         // If discovery is in progress, return cached devices if available
-        if (inProgress && Object.keys(devices).length > 0) {
+        if (inProgress && Object.keys(discoveredDevices).length > 0) {
           app.debug('Discovery in progress, returning cached devices');
           sendWsResponse(conn, { id: 'startDiscovery', result: buildDeviceSummaryMap() });
         } else if (inProgress) {
@@ -1335,8 +1353,8 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     let authPass = password;
 
     if (camConfig) {
-      authUser = camConfig.userName || userName;
-      authPass = camConfig.password || password;
+      authUser = camConfig.userName;
+      authPass = camConfig.password;
     }
 
     if (hasRequestedUser) {
