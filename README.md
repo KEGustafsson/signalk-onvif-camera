@@ -80,6 +80,7 @@ npm run lint        # Lint with ESLint
 - v0.7.1, fix WebSocket connection issues
 - v0.8.0, webpack changed to vite
 - v1.0.0: WebSocket noServer mode, build pipeline cleanup
+- v1.1.0: migrated TypeScript, hardened ONVIF discovery, auth, snapshot/MJPEG streaming, reconnect and shutdown behavior
 
 ## Credits
 
