@@ -133,6 +133,14 @@ interface PluginApp {
   server?: AppServerLike | null;
 }
 
+function hasUpgradeListenerServer(server: PluginApp['server']): server is AppServerLike {
+  return Boolean(
+    server
+    && typeof server.on === 'function'
+    && typeof server.removeListener === 'function'
+  );
+}
+
 interface HttpRequestLike {
   query: UnknownRecord;
   url?: string;
@@ -443,11 +451,11 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
       wsServer.close();
       wsServer = null;
     }
-    if (upgradeHandler && app.server) {
+    if (upgradeHandler && hasUpgradeListenerServer(app.server)) {
       app.server.removeListener('upgrade', upgradeHandler);
       upgradeHandler = null;
     }
-    if (app.server) {
+    if (hasUpgradeListenerServer(app.server)) {
       // Use noServer mode so we don't interfere with SignalK's own
       // WebSocket server on the same HTTP server.  With the default
       // { server } option the ws library adds its own 'upgrade'
@@ -680,7 +688,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     mjpegStreams.clear();
     closeActiveWsConnections();
 
-    if (upgradeHandler && app.server) {
+    if (upgradeHandler && hasUpgradeListenerServer(app.server)) {
       app.server.removeListener('upgrade', upgradeHandler);
       upgradeHandler = null;
     }
