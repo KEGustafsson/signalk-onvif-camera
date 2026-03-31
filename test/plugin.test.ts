@@ -203,6 +203,22 @@ describe('signalk-onvif-camera plugin', () => {
       expect(() => p.start(baseOptions)).not.toThrow();
       consoleSpy.mockRestore();
     });
+
+    test('should not throw when app.server does not implement EventEmitter methods', () => {
+      const appInvalidServer = { ...mockApp, server: {} };
+      jest.resetModules();
+      const createPlugin = require('../index') as CreatePlugin;
+      const p = createPlugin(appInvalidServer);
+      expect(() => p.start(baseOptions)).not.toThrow();
+    });
+
+    test('should not throw when app.server is a non-server function value', () => {
+      const appFunctionServer = { ...mockApp, server: (() => {}) };
+      jest.resetModules();
+      const createPlugin = require('../index') as CreatePlugin;
+      const p = createPlugin(appFunctionServer);
+      expect(() => p.start(baseOptions)).not.toThrow();
+    });
   });
 
   // ── plugin.stop() ───────────────────────────────────────────────────────────
