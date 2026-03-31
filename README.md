@@ -82,6 +82,7 @@ npm run lint        # Lint with ESLint
 - v1.0.0: WebSocket noServer mode, build pipeline cleanup
 - v1.1.0: migrated TypeScript, hardened ONVIF discovery, auth, snapshot/MJPEG streaming, reconnect and shutdown behavior
 - v1.1.1: clean-up build output
+- v1.1.2: small fixes
 
 ## Credits
 
