@@ -83,6 +83,7 @@ npm run lint        # Lint with ESLint
 - v1.1.0: migrated TypeScript, hardened ONVIF discovery, auth, snapshot/MJPEG streaming, reconnect and shutdown behavior
 - v1.1.1: clean-up build output
 - v1.1.2: small fixes
+- v1.2.0: fix per-camera credentials being ignored on address mismatch
 
 ## Credits
 
