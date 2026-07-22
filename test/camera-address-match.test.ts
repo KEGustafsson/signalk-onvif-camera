@@ -48,6 +48,18 @@ describe('normalizeAddressKey', () => {
     expect(normalizeAddressKey('[fe80::1]:8000')).toBe('fe80::1');
   });
 
+  test('preserves a bare IPv6 literal (multiple colons are not a port)', () => {
+    expect(normalizeAddressKey('fe80::1')).toBe('fe80::1');
+    expect(normalizeAddressKey('2001:db8::1')).toBe('2001:db8::1');
+  });
+
+  test('a typed bare IPv6 matches its discovered bracketed URL form', () => {
+    const typed = 'fe80::1';
+    const discovered = 'http://[fe80::1]/onvif/device_service';
+    expect(normalizeAddressKey(typed)).toBe(normalizeAddressKey(discovered));
+    expect(normalizeAddressKey(typed)).toBe('fe80::1');
+  });
+
   test('returns empty string for blank input', () => {
     expect(normalizeAddressKey('')).toBe('');
     expect(normalizeAddressKey('   ')).toBe('');

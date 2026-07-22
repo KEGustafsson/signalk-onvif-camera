@@ -300,5 +300,34 @@ describe('signalk-onvif-camera plugin', () => {
       };
       expect(() => plugin.start(options)).not.toThrow();
     });
+
+    test('should flag Camera List entries that collapse to the same normalized address', () => {
+      const options = {
+        snapshotInterval: 100,
+        discoverOnStart: false,
+        autoDiscoveryInterval: 0,
+        cameras: [
+          { address: 'camera.local:8000', userName: 'a', password: 'a' },
+          { address: 'camera.local:8080', userName: 'b', password: 'b' }
+        ]
+      };
+      expect(() => plugin.start(options)).not.toThrow();
+      const messages = mockApp.debug.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((m) => m.includes("multiple entries resolving to 'camera.local'"))).toBe(true);
+    });
+
+    test('should warn about a Camera List entry without an address', () => {
+      const options = {
+        snapshotInterval: 100,
+        discoverOnStart: false,
+        autoDiscoveryInterval: 0,
+        cameras: [
+          { name: 'no-address', userName: 'a', password: 'a' }
+        ]
+      };
+      expect(() => plugin.start(options)).not.toThrow();
+      const messages = mockApp.debug.mock.calls.map((call) => String(call[0]));
+      expect(messages.some((m) => m.includes('without an address'))).toBe(true);
+    });
   });
 });

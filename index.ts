@@ -327,8 +327,11 @@ function normalizeAddressKey(address: string): string {
       value = value.slice(1, end);
     }
   } else {
-    const colon = value.lastIndexOf(':');
-    if (colon !== -1) {
+    // Only strip a port when the authority has a single colon (host:port). A
+    // bare IPv6 literal such as fe80::1 has multiple colons and must be left
+    // intact so it still matches its bracketed discovered form.
+    const colon = value.indexOf(':');
+    if (colon !== -1 && colon === value.lastIndexOf(':')) {
       value = value.slice(0, colon);
     }
   }
@@ -394,7 +397,9 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
   // Secondary index of the same CameraConfig objects keyed by normalized
   // address, used to resolve entries whose typed address is not string-identical
   // to the address a device is discovered under.
-  let cameraConfigsByNormalizedAddress: Record<string, CameraConfig> = {};
+  // A null value marks a normalized key as ambiguous (multiple Camera List
+  // entries collapse to it), in which case only an exact address match applies.
+  let cameraConfigsByNormalizedAddress: Record<string, CameraConfig | null> = {};
   let devices: Record<string, OnvifDeviceLike> = {};
   let deviceNames: Record<string, string> = {};
   let discoveredDevices: DeviceSummaryMap = {};
@@ -448,8 +453,13 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
           const normalizedAddress = normalizeAddressKey(cam.address);
           if (normalizedAddress) {
-            if (cameraConfigsByNormalizedAddress[normalizedAddress]) {
-              app.debug(`Camera List has multiple entries resolving to '${normalizedAddress}'; per-camera settings for '${cam.address}' may be ignored`);
+            if (normalizedAddress in cameraConfigsByNormalizedAddress) {
+              // A second entry collapses to the same normalized key. Mark it
+              // ambiguous so a host-only discovered address can't be handed the
+              // wrong entry's credentials; these entries now require an exact
+              // address match.
+              cameraConfigsByNormalizedAddress[normalizedAddress] = null;
+              app.debug(`Camera List has multiple entries resolving to '${normalizedAddress}'; these entries now require an exact address match`);
             } else {
               cameraConfigsByNormalizedAddress[normalizedAddress] = config;
             }
