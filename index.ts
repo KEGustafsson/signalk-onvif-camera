@@ -304,6 +304,40 @@ function getQueryString(query: UnknownRecord, key: string): string | undefined {
   return getStringValue(query[key]);
 }
 
+// Normalize a camera address into a comparable key so that a Camera List entry
+// matches the address a device is discovered under even when they are not
+// string-identical. Discovered devices are keyed by the hostname parsed from
+// the camera's advertised ONVIF XAddr, while the Camera List address is typed
+// by hand and may include a scheme, a port, a path or different casing.
+function normalizeAddressKey(address: string): string {
+  let value = address.trim().toLowerCase();
+  if (value === '') {
+    return '';
+  }
+  // Strip a scheme and any path/query so only the host[:port] authority remains.
+  const schemeMatch = value.match(/^[a-z][a-z0-9+.-]*:\/\/(.*)$/);
+  if (schemeMatch) {
+    value = schemeMatch[1];
+  }
+  value = value.split('/')[0].split('?')[0];
+  // Strip a trailing port (but leave bracketed IPv6 literals intact).
+  if (value.startsWith('[')) {
+    const end = value.indexOf(']');
+    if (end !== -1) {
+      value = value.slice(1, end);
+    }
+  } else {
+    // Only strip a port when the authority has a single colon (host:port). A
+    // bare IPv6 literal such as fe80::1 has multiple colons and must be left
+    // intact so it still matches its bracketed discovered form.
+    const colon = value.indexOf(':');
+    if (colon !== -1 && colon === value.lastIndexOf(':')) {
+      value = value.slice(0, colon);
+    }
+  }
+  return value;
+}
+
 function getSnapshotContentType(result: SnapshotResponse): string {
   const contentType = result.headers['content-type'];
   if (typeof contentType === 'string') {
@@ -360,6 +394,12 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
   let startupDiscoveryDelay = 5;
   let pluginRunning = false;
   let cameraConfigs: Record<string, CameraConfig> = {};
+  // Secondary index of the same CameraConfig objects keyed by normalized
+  // address, used to resolve entries whose typed address is not string-identical
+  // to the address a device is discovered under.
+  // A null value marks a normalized key as ambiguous (multiple Camera List
+  // entries collapse to it), in which case only an exact address match applies.
+  let cameraConfigsByNormalizedAddress: Record<string, CameraConfig | null> = {};
   let devices: Record<string, OnvifDeviceLike> = {};
   let deviceNames: Record<string, string> = {};
   let discoveredDevices: DeviceSummaryMap = {};
@@ -384,6 +424,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
     // Build camera-specific config map
     cameraConfigs = {};
+    cameraConfigsByNormalizedAddress = {};
     const usedNicknames: Record<string, number> = {};
     if (options.cameras && Array.isArray(options.cameras)) {
       options.cameras.forEach(cam => {
@@ -402,12 +443,29 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
           }
           usedNicknames[sanitizedNickname] = 1;
 
-          cameraConfigs[cam.address] = {
+          const config: CameraConfig = {
             name: cam.name || cam.address,
             nickname: sanitizedNickname,
             userName: typeof cam.userName === 'string' ? cam.userName : userName,
             password: typeof cam.password === 'string' ? cam.password : password
           };
+          cameraConfigs[cam.address] = config;
+
+          const normalizedAddress = normalizeAddressKey(cam.address);
+          if (normalizedAddress) {
+            if (normalizedAddress in cameraConfigsByNormalizedAddress) {
+              // A second entry collapses to the same normalized key. Mark it
+              // ambiguous so a host-only discovered address can't be handed the
+              // wrong entry's credentials; these entries now require an exact
+              // address match.
+              cameraConfigsByNormalizedAddress[normalizedAddress] = null;
+              app.debug(`Camera List has multiple entries resolving to '${normalizedAddress}'; these entries now require an exact address match`);
+            } else {
+              cameraConfigsByNormalizedAddress[normalizedAddress] = config;
+            }
+          }
+        } else {
+          app.debug('Ignoring Camera List entry without an address; per-camera username/password require the camera address to be set');
         }
       });
     }
@@ -580,7 +638,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
             }
 
             // Auto-connect pre-configured cameras and publish to Signal K
-            const camConfig = cameraConfigs[addr];
+            const camConfig = resolveCameraConfig(addr);
             if (camConfig && enableSignalKIntegration) {
               // Set auth and initialize device
               odevice.setAuth(camConfig.userName, camConfig.password);
@@ -802,6 +860,25 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
       };
     });
     return summaries;
+  }
+
+  // Resolve the per-camera configuration for a device address. Discovered
+  // devices are keyed by the hostname from the camera's advertised ONVIF XAddr,
+  // which does not always equal the address typed into the Camera List, so fall
+  // back to a normalized (scheme/port/case-insensitive) match before giving up.
+  function resolveCameraConfig(address: string): CameraConfig | undefined {
+    const exact = cameraConfigs[address];
+    if (exact) {
+      return exact;
+    }
+    const normalized = cameraConfigsByNormalizedAddress[normalizeAddressKey(address)];
+    if (normalized) {
+      return normalized;
+    }
+    if (Object.keys(cameraConfigs).length > 0) {
+      app.debug(`No Camera List entry matched discovered address '${address}'; using default credentials`);
+    }
+    return undefined;
   }
 
   function registerDiscoveredDevice(device: OnvifDiscoveryDevice, context: string): RegisteredDiscoveryDevice | null {
@@ -1352,7 +1429,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     }
 
     // Use per-camera credentials if available, otherwise use defaults
-    const camConfig = cameraConfigs[address];
+    const camConfig = resolveCameraConfig(address);
     const requestedUser = request.user;
     const requestedPass = request.pass;
     const hasRequestedUser = typeof requestedUser === 'string';
@@ -1588,7 +1665,7 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
   // Get nickname for a camera address
   function getCameraNickname(address: string): string {
-    const camConfig = cameraConfigs[address];
+    const camConfig = resolveCameraConfig(address);
     if (camConfig && camConfig.nickname) {
       return camConfig.nickname;
     }
@@ -1839,3 +1916,6 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
 
   return plugin;
 };
+
+// Exposed for unit testing of the Camera List address matching logic.
+module.exports.normalizeAddressKey = normalizeAddressKey;
