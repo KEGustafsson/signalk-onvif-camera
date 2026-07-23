@@ -102,6 +102,23 @@ Handlers respond asynchronously with the standard Signal K PUT result
 has not been discovered, `405` when the camera has no PTZ support, and `502`
 when the camera rejects the command).
 
+### Runnable example
+
+[`examples/ptz-control.js`](examples/ptz-control.js) is a dependency-free
+Node.js script (requires Node.js 18+) that demonstrates the full API — move,
+stop and home — including how to handle the asynchronous PUT result. Configure
+it with environment variables and run it against your server:
+
+```bash
+SIGNALK_URL=http://localhost:3000 \
+CAMERA_ADDRESS=192.168.1.50 \
+SIGNALK_TOKEN=<optional-token> \
+node examples/ptz-control.js
+```
+
+The script also exports its `ptzMove` / `ptzStop` / `ptzHome` helpers so you can
+`require()` them from your own code.
+
 ## Development
 
 ```bash
