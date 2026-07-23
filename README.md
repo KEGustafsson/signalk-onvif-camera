@@ -64,9 +64,10 @@ registers PUT handlers on three paths (context `vessels.self`):
 
 The `address` is the camera's IP address. `speed` (for `move`) and `timeout`
 are optional; `x`/`y`/`z` default to `0` and `timeout` defaults to `1` second.
-If the target camera has been discovered but not yet connected, the plugin
-connects to it on demand using the configured (per-camera or default)
-credentials before issuing the command.
+For `home`, `speed` is optional and defaults to `1`. If the target camera has
+been discovered but not yet connected, the plugin connects to it on demand
+using the configured (per-camera or default) credentials before issuing the
+command.
 
 ### HTTP example
 
@@ -90,17 +91,19 @@ curl -X PUT http://localhost:3000/signalk/v1/api/vessels/self/sensors/camera/ptz
 ### From another Signal K plugin
 
 ```js
+// putSelfPath(path, value, updateCb) returns a Promise resolving to the result
 app.putSelfPath('sensors.camera.ptz.move', {
   address: '192.168.1.50',
   speed: { x: 0.5, y: 0, z: 0 },
   timeout: 2
-});
+}, () => {}).then(result => app.debug('PTZ move result', result));
 ```
 
-Handlers respond asynchronously with the standard Signal K PUT result
-(`statusCode` `200` on success, `400` for invalid input, `404` when the camera
-has not been discovered, `405` when the camera has no PTZ support, and `502`
-when the camera rejects the command).
+Handlers respond asynchronously with the standard Signal K PUT result. The
+`statusCode` is `200` on success, `400` for invalid input, `404` when the
+camera has not been discovered, `405` when the camera has no PTZ support, `409`
+when the camera has no media profile selected, `502` when connecting to or
+commanding the camera fails, and `503` while the plugin is restarting.
 
 ### Runnable example
 
