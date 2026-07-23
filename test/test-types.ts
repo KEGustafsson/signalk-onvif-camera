@@ -45,6 +45,7 @@ export interface MockApp {
   debug: jest.Mock;
   handleMessage: jest.Mock;
   get: jest.Mock;
+  registerPutHandler?: jest.Mock;
   server: unknown | null;
   getDataDirPath: jest.Mock<string, []>;
   securityStrategy?: SecurityStrategy;
