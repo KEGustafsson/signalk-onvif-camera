@@ -155,12 +155,16 @@ describe('PTZ PUT API', () => {
       expect(paths).toContainEqual({ context: 'vessels.self', path: 'sensors.camera.ptz.home' });
     });
 
-    test('does not re-register handlers on restart', () => {
+    test('re-registers handlers after a restart (Signal K removes them on stop)', () => {
+      // Signal K deregisters a plugin's PUT handlers when it stops, so the
+      // handlers must be registered again on every start() — otherwise the PTZ
+      // paths would have no handler after a config-change restart.
       plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
       const countAfterFirst = mockApp.registerPutHandler!.mock.calls.length;
+      expect(countAfterFirst).toBe(3);
       plugin.stop();
       plugin.start({ snapshotInterval: 100, discoverOnStart: false, autoDiscoveryInterval: 0 });
-      expect(mockApp.registerPutHandler!.mock.calls.length).toBe(countAfterFirst);
+      expect(mockApp.registerPutHandler!.mock.calls.length).toBe(countAfterFirst + 3);
     });
 
     test('does not throw when app.registerPutHandler is unavailable', () => {

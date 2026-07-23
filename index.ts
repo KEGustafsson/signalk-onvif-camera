@@ -107,7 +107,6 @@ interface PluginDefinition {
   start(options: PluginOptions, restartPlugin?: unknown): void;
   stop(): void;
   _routesRegistered?: boolean;
-  _putHandlersRegistered?: boolean;
   uiSchema: PluginUiSchema;
   schema: {
     type: 'object';
@@ -531,12 +530,15 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     // through the standard Signal K PUT API. External clients issue a PUT to
     //   /signalk/v1/api/vessels/self/sensors/camera/ptz/{move,stop,home}
     // (or send an equivalent delta put request) with a value carrying the
-    // target camera address. Registered only once across restarts.
-    if (!plugin._putHandlersRegistered && typeof app.registerPutHandler === 'function') {
+    // target camera address.
+    //
+    // Unlike the HTTP routes above, Signal K deregisters a plugin's PUT
+    // handlers when the plugin stops, so these must be re-registered on every
+    // start(). Re-registering the same context/path does not stack duplicates.
+    if (typeof app.registerPutHandler === 'function') {
       app.registerPutHandler('vessels.self', `${PTZ_PUT_BASE_PATH}.move`, handlePtzMovePut, plugin.id);
       app.registerPutHandler('vessels.self', `${PTZ_PUT_BASE_PATH}.stop`, handlePtzStopPut, plugin.id);
       app.registerPutHandler('vessels.self', `${PTZ_PUT_BASE_PATH}.home`, handlePtzHomePut, plugin.id);
-      plugin._putHandlersRegistered = true;
       app.debug('Onvif Camera PTZ PUT handlers registered');
     }
 

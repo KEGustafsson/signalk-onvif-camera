@@ -52,6 +52,10 @@ const SIGNALK_TOKEN = process.env.SIGNALK_TOKEN || '';
 // Root of the plugin's PTZ PUT paths, expressed in REST (slash) form.
 const PTZ_BASE = '/signalk/v1/api/vessels/self/sensors/camera/ptz';
 
+// Abort any single network request (connect + read) that takes longer than
+// this, so a hung connection can never block later commands.
+const REQUEST_TIMEOUT_MS = 5000;
+
 // How long to keep polling an asynchronous (PENDING) request before giving up.
 const REQUEST_POLL_TIMEOUT_MS = 10000;
 const REQUEST_POLL_INTERVAL_MS = 250;
@@ -74,6 +78,14 @@ function buildHeaders() {
   return headers;
 }
 
+// Turn a thrown fetch/abort error into a readable message.
+function describeError(error) {
+  if (error && error.name === 'TimeoutError') {
+    return 'Request timed out after ' + REQUEST_TIMEOUT_MS + ' ms';
+  }
+  return error && error.message ? error.message : String(error);
+}
+
 // Parse a fetch Response as JSON, tolerating empty bodies.
 async function parseJson(response) {
   const text = await response.text();
@@ -87,16 +99,53 @@ async function parseJson(response) {
   }
 }
 
+// Perform a request bounded by an abortable per-request timeout that covers
+// both the connection and the body read (AbortSignal.timeout aborts the whole
+// fetch, including response.text()). Returns { status, body }; the caller
+// translates a thrown error into a failed result.
+async function fetchJson(url, options) {
+  const response = await fetch(url, Object.assign({}, options, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  }));
+  const body = await parseJson(response);
+  return { status: response.status, body: body };
+}
+
+// Coerce a { status, body } pair into a Signal K action result, guaranteeing a
+// numeric statusCode is always present by falling back to the HTTP status when
+// the body is empty or carries no statusCode.
+function normaliseResult(fetched) {
+  const body = fetched.body && typeof fetched.body === 'object' ? fetched.body : {};
+  const result = Object.assign({}, body);
+  if (typeof result.statusCode !== 'number') {
+    result.statusCode = fetched.status;
+  }
+  return result;
+}
+
 // Signal K answers a PUT that resolves asynchronously with HTTP 202 and a body
 // like { state: 'PENDING', href: '/signalk/v1/requests/<id>' }. Poll that href
-// until the request reaches a terminal state (COMPLETED or FAILED).
+// until the request reaches a terminal state (COMPLETED or FAILED), an HTTP
+// error occurs, or the overall poll deadline is reached.
 async function pollRequest(href) {
   const deadline = Date.now() + REQUEST_POLL_TIMEOUT_MS;
   let latest = null;
   while (Date.now() < deadline) {
-    const response = await fetch(SIGNALK_URL + href, { headers: buildHeaders() });
-    latest = await parseJson(response);
-    if (latest && latest.state && latest.state !== 'PENDING') {
+    let fetched;
+    try {
+      fetched = await fetchJson(SIGNALK_URL + href, { headers: buildHeaders() });
+    } catch (error) {
+      return { state: 'FAILED', statusCode: 0, message: describeError(error) };
+    }
+
+    latest = normaliseResult(fetched);
+
+    // An HTTP error (401/404/500, ...) won't be fixed by polling — stop now.
+    if (fetched.status < 200 || fetched.status >= 300) {
+      return latest;
+    }
+    // Stop once the request reaches a terminal state.
+    if (latest.state && latest.state !== 'PENDING') {
       return latest;
     }
     await sleep(REQUEST_POLL_INTERVAL_MS);
@@ -107,21 +156,22 @@ async function pollRequest(href) {
 
 // Core helper: PUT a value to one of the PTZ command sub-paths and return the
 // final Signal K action result ({ state, statusCode, message }). Handles both
-// the synchronous (COMPLETED) and asynchronous (PENDING + href) responses.
+// the synchronous (COMPLETED) and asynchronous (PENDING + href) responses, and
+// never throws — network/timeout failures come back as a FAILED result.
 async function signalkPut(subPath, value) {
   const url = SIGNALK_URL + PTZ_BASE + '/' + subPath;
-  const response = await fetch(url, {
-    method: 'PUT',
-    headers: buildHeaders(),
-    body: JSON.stringify({ value: value })
-  });
-
-  let result = await parseJson(response);
-
-  // Normalise: some responses carry the status only in the HTTP status line.
-  if (!result) {
-    result = { statusCode: response.status };
+  let fetched;
+  try {
+    fetched = await fetchJson(url, {
+      method: 'PUT',
+      headers: buildHeaders(),
+      body: JSON.stringify({ value: value })
+    });
+  } catch (error) {
+    return { state: 'FAILED', statusCode: 0, message: describeError(error) };
   }
+
+  let result = normaliseResult(fetched);
 
   if (result.state === 'PENDING' && result.href) {
     result = await pollRequest(result.href);
