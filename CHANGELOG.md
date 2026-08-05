@@ -1,0 +1,27 @@
+# Changelog
+
+- v0.0.1, 1st version for testing
+- v0.0.2, license added
+- v0.1.0, 1st release
+- v0.1.1, ONVIF LAN selection
+- v0.1.2, Webpack bundled
+- v0.1.3, Webapp icon added
+- v0.1.4, updated to npm packages
+- v0.2.0, hide controls
+- v0.2.1, version update
+- v0.3.0, ws error handling
+- v0.3.1, icon loading error
+- v0.4.0, code refactoring
+- v0.5.0, improvements to streaming and viewing
+- v0.6.0, replace devcert with selfsigned
+- v0.6.1, extra console logs removed
+- v0.7.0, certs stored to permanent location
+- v0.7.1, fix WebSocket connection issues
+- v0.8.0, webpack changed to vite
+- v1.0.0: WebSocket noServer mode, build pipeline cleanup
+- v1.1.0: migrated TypeScript, hardened ONVIF discovery, auth, snapshot/MJPEG streaming, reconnect and shutdown behavior
+- v1.1.1: clean-up build output
+- v1.1.2: small fixes
+- v1.2.0: fix per-camera credentials being ignored on address mismatch
+- v1.3.0: add PUT-handler-based PTZ API for external plugins/apps
+- v1.3.1: changelog added
