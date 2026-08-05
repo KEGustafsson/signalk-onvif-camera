@@ -125,10 +125,30 @@ interface SecurityStrategyLike {
   shouldAllowRequest(req: HttpRequestLike, permission: string): boolean;
 }
 
+// Signal K PUT handler contract. A handler returns a synchronous result, or
+// { state: 'PENDING' } and later resolves the operation via the callback.
+type PutResultState = 'COMPLETED' | 'PENDING' | 'FAILED';
+
+interface PutHandlerResult {
+  state: PutResultState;
+  statusCode?: number;
+  message?: string;
+}
+
+type PutHandlerCallback = (result: PutHandlerResult) => void;
+
+type PutHandler = (
+  context: string,
+  path: string,
+  value: unknown,
+  callback: PutHandlerCallback
+) => PutHandlerResult;
+
 interface PluginApp {
   debug(...args: unknown[]): void;
   get?(path: string, handler: (req: HttpRequestLike, res: HttpResponseLike) => void): void;
   handleMessage?(pluginId: string, delta: UnknownRecord): void;
+  registerPutHandler?(context: string, path: string, handler: PutHandler, source?: string): void;
   securityStrategy?: SecurityStrategyLike;
   server?: AppServerLike | null;
 }
@@ -372,6 +392,10 @@ function resolvePublicFilePath(fileName: string): string {
   return path.join(__dirname, '..', 'public', fileName);
 }
 
+// Base Signal K path under which the PTZ PUT command handlers are registered.
+// External clients target `${PTZ_PUT_BASE_PATH}.move|stop|home`.
+const PTZ_PUT_BASE_PATH = 'sensors.camera.ptz';
+
 module.exports = function createPlugin(app: PluginApp): PluginDefinition {
   const plugin: PluginDefinition = {
     id: 'signalk-onvif-camera',
@@ -511,6 +535,22 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
         handleProfilesRequest(req, res, req.query);
       });
       plugin._routesRegistered = true;
+    }
+
+    // Register Signal K PUT handlers so external plugins or apps can drive PTZ
+    // through the standard Signal K PUT API. External clients issue a PUT to
+    //   /signalk/v1/api/vessels/self/sensors/camera/ptz/{move,stop,home}
+    // (or send an equivalent delta put request) with a value carrying the
+    // target camera address.
+    //
+    // Unlike the HTTP routes above, Signal K deregisters a plugin's PUT
+    // handlers when the plugin stops, so these must be re-registered on every
+    // start(). Re-registering the same context/path does not stack duplicates.
+    if (typeof app.registerPutHandler === 'function') {
+      app.registerPutHandler('vessels.self', `${PTZ_PUT_BASE_PATH}.move`, handlePtzMovePut, plugin.id);
+      app.registerPutHandler('vessels.self', `${PTZ_PUT_BASE_PATH}.stop`, handlePtzStopPut, plugin.id);
+      app.registerPutHandler('vessels.self', `${PTZ_PUT_BASE_PATH}.home`, handlePtzHomePut, plugin.id);
+      app.debug('Onvif Camera PTZ PUT handlers registered');
     }
 
     // Attach WebSocket server to SignalK's HTTP server.
@@ -1925,6 +1965,163 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
       }
       sendWsResponse(conn, res);
     });
+  }
+
+  // ── Signal K PUT-based PTZ API ─────────────────────────────────────────────
+  // These handlers expose the same PTZ operations as the WebSocket API through
+  // Signal K's standard PUT mechanism, giving external plugins and apps an easy
+  // integration point that does not require the plugin's WebSocket protocol.
+
+  // Coerce a PUT value into a params record. A bare string value is treated as
+  // the camera address so callers can PUT just an address to stop/home a camera.
+  function normalizePtzPutValue(value: unknown): UnknownRecord {
+    if (typeof value === 'string') {
+      return { address: value };
+    }
+    return isRecord(value) ? value : {};
+  }
+
+  function makePutErrorResult(message: string, statusCode: number): PutHandlerResult {
+    return { state: 'COMPLETED', statusCode, message };
+  }
+
+  // Resolve a connected, PTZ-capable device for the given address, connecting it
+  // on demand when it has been discovered but not yet initialised. Invokes the
+  // callback with either an error (carrying a suitable HTTP status code) or a
+  // ready device whose current media profile and PTZ service are available.
+  function ensurePtzDevice(
+    address: string,
+    callback: (error: PutHandlerResult | null, device?: OnvifDeviceLike) => void
+  ): void {
+    const device = devices[address];
+    if (!device) {
+      callback(makePutErrorResult('The specified device is not found: ' + address, 404));
+      return;
+    }
+
+    const finish = (readyDevice: OnvifDeviceLike): void => {
+      if (!readyDevice.services.ptz) {
+        callback(makePutErrorResult('The specified device does not support PTZ.', 405));
+        return;
+      }
+      if (!readyDevice.getCurrentProfile()) {
+        callback(makePutErrorResult('No media profile selected', 409));
+        return;
+      }
+      callback(null, readyDevice);
+    };
+
+    // Already initialised (connected) devices expose a current profile.
+    if (device.getCurrentProfile()) {
+      finish(device);
+      return;
+    }
+
+    // Auto-connect using per-camera or default credentials before commanding.
+    const camConfig = resolveCameraConfig(address);
+    const authUser = camConfig ? camConfig.userName : userName;
+    const authPass = camConfig ? camConfig.password : password;
+    device.setAuth(authUser, authPass);
+    device.init((initError) => {
+      if (!pluginRunning) {
+        callback(makePutErrorResult('Plugin is stopping', 503));
+        return;
+      }
+      if (initError) {
+        callback(makePutErrorResult('Failed to connect to camera ' + address + ': ' + getErrorMessage(initError), 502));
+        return;
+      }
+      finish(device);
+    });
+  }
+
+  // Shared PUT flow: validate the address, resolve a ready device, run the PTZ
+  // action and translate its node-style result into a PUT handler result.
+  function runPtzPut(
+    address: string,
+    action: (device: OnvifDeviceLike, done: (error: Error | null) => void) => void,
+    callback: PutHandlerCallback
+  ): void {
+    ensurePtzDevice(address, (readyError, device) => {
+      if (readyError || !device) {
+        callback(readyError || makePutErrorResult('Device not available', 502));
+        return;
+      }
+      action(device, (actionError) => {
+        if (actionError) {
+          callback(makePutErrorResult(getErrorMessage(actionError), 502));
+        } else {
+          callback({ state: 'COMPLETED', statusCode: 200 });
+        }
+      });
+    });
+  }
+
+  // PUT sensors.camera.ptz.move
+  // value: { address, speed: { x, y, z }, timeout? } — continuous PTZ move.
+  function handlePtzMovePut(_context: string, _path: string, value: unknown, callback: PutHandlerCallback): PutHandlerResult {
+    let command: UnknownRecord;
+    try {
+      command = validatePTZCommand(normalizePtzPutValue(value));
+    } catch (error) {
+      return makePutErrorResult(getErrorMessage(error), 400);
+    }
+
+    const address = getStringValue(command.address);
+    if (!address) {
+      return makePutErrorResult('Device address is required', 400);
+    }
+
+    runPtzPut(address, (device, done) => {
+      device.ptzMove(command, done);
+    }, callback);
+    return { state: 'PENDING' };
+  }
+
+  // PUT sensors.camera.ptz.stop
+  // value: { address } (or a bare address string) — stop pan/tilt/zoom.
+  function handlePtzStopPut(_context: string, _path: string, value: unknown, callback: PutHandlerCallback): PutHandlerResult {
+    const params = normalizePtzPutValue(value);
+    let address: string;
+    try {
+      address = validateDeviceAddress(getStringValue(params.address));
+    } catch (error) {
+      return makePutErrorResult(getErrorMessage(error), 400);
+    }
+
+    runPtzPut(address, (device, done) => {
+      device.ptzStop((stopError) => {
+        done(stopError);
+      });
+    }, callback);
+    return { state: 'PENDING' };
+  }
+
+  // PUT sensors.camera.ptz.home
+  // value: { address, speed? } (or a bare address string) — go to home position.
+  function handlePtzHomePut(_context: string, _path: string, value: unknown, callback: PutHandlerCallback): PutHandlerResult {
+    const params = normalizePtzPutValue(value);
+    let address: string;
+    try {
+      address = validateDeviceAddress(getStringValue(params.address));
+    } catch (error) {
+      return makePutErrorResult(getErrorMessage(error), 400);
+    }
+
+    const speed = typeof params.speed === 'number' ? params.speed : 1;
+
+    runPtzPut(address, (device, done) => {
+      const ptz = device.services.ptz;
+      const profile = device.getCurrentProfile();
+      if (!ptz || !profile) {
+        done(new Error('No media profile selected'));
+        return;
+      }
+      ptz.gotoHomePosition({ ProfileToken: profile.token, Speed: speed }, (homeError) => {
+        done(homeError);
+      });
+    }, callback);
+    return { state: 'PENDING' };
   }
 
   return plugin;
