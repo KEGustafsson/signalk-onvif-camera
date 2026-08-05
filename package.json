@@ -14,6 +14,7 @@
   "scripts": {
     "test": "jest --coverage",
     "test:watch": "jest --watch",
+    "coverage": "jest --coverage",
     "lint": "eslint .",
     "lint:fix": "eslint . --ext .js,.ts --fix",
     "typecheck": "tsc --noEmit",
@@ -25,7 +26,14 @@
   },
   "signalk": {
     "appIcon": "./icons/icon-72x72.png",
-    "displayName": "Signalk-onvif-camera"
+    "displayName": "Signalk-onvif-camera",
+    "screenshots": [
+      "./doc/config.jpg",
+      "./doc/onvif.jpg",
+      "./doc/webapp.jpg",
+      "./doc/service.jpg",
+      "./doc/inuse.jpg"
+    ]
   },
   "keywords": [
     "signalk-node-server-plugin",
