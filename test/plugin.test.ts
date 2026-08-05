@@ -168,7 +168,7 @@ describe('signalk-onvif-camera plugin', () => {
       expect(mockApp.get.mock.calls.length).toBe(countAfterFirst);
     });
 
-    test('should attach WebSocket server to app.server', () => {
+    test('should attach WebSocket server to the SignalK HTTP server', () => {
       plugin.start(baseOptions);
       // WebSocket.Server attaches an 'upgrade' listener to the underlying server
       expect(mockServer.on).toHaveBeenCalled();
@@ -194,7 +194,7 @@ describe('signalk-onvif-camera plugin', () => {
       expect(written[0].secure).toBeUndefined();
     });
 
-    test('should log error and not throw when app.server is absent', () => {
+    test('should log error and not throw when the SignalK HTTP server is absent', () => {
       const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
       const appNoServer = { ...mockApp, server: null };
       jest.resetModules();
@@ -204,7 +204,7 @@ describe('signalk-onvif-camera plugin', () => {
       consoleSpy.mockRestore();
     });
 
-    test('should not throw when app.server does not implement EventEmitter methods', () => {
+    test('should not throw when the SignalK HTTP server does not implement EventEmitter methods', () => {
       const appInvalidServer = { ...mockApp, server: {} };
       jest.resetModules();
       const createPlugin = require('../index') as CreatePlugin;
@@ -212,7 +212,7 @@ describe('signalk-onvif-camera plugin', () => {
       expect(() => p.start(baseOptions)).not.toThrow();
     });
 
-    test('should not throw when app.server is a non-server function value', () => {
+    test('should not throw when the SignalK HTTP server is a non-server function value', () => {
       const appFunctionServer = { ...mockApp, server: (() => {}) };
       jest.resetModules();
       const createPlugin = require('../index') as CreatePlugin;

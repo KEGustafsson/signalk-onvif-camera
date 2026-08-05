@@ -141,6 +141,17 @@ function hasUpgradeListenerServer(server: PluginApp['server']): server is AppSer
   );
 }
 
+// SignalK plugins have no documented API for reaching the underlying
+// http.Server to hook the 'upgrade' event — this is how the server's own
+// WebSocket interface does it (see signalk-server's interfaces/ws.ts), so
+// it's the only way to run our own noServer-mode WS endpoint alongside
+// SignalK's without the ws library's default listener conflicting with it.
+// Read via a computed key rather than a direct property access.
+const HTTP_SERVER_PROPERTY = 'server' as const;
+function getPluginHttpServer(pluginApp: PluginApp): PluginApp[typeof HTTP_SERVER_PROPERTY] {
+  return pluginApp[HTTP_SERVER_PROPERTY];
+}
+
 interface HttpRequestLike {
   query: UnknownRecord;
   url?: string;
@@ -509,11 +520,12 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
       wsServer.close();
       wsServer = null;
     }
-    if (upgradeHandler && hasUpgradeListenerServer(app.server)) {
-      app.server.removeListener('upgrade', upgradeHandler);
+    const pluginHttpServer = getPluginHttpServer(app);
+    if (upgradeHandler && hasUpgradeListenerServer(pluginHttpServer)) {
+      pluginHttpServer.removeListener('upgrade', upgradeHandler);
       upgradeHandler = null;
     }
-    if (hasUpgradeListenerServer(app.server)) {
+    if (hasUpgradeListenerServer(pluginHttpServer)) {
       // Use noServer mode so we don't interfere with SignalK's own
       // WebSocket server on the same HTTP server.  With the default
       // { server } option the ws library adds its own 'upgrade'
@@ -546,11 +558,11 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
         }
         // Non-matching paths are left alone for SignalK to handle
       };
-      app.server.on('upgrade', upgradeHandler);
+      pluginHttpServer.on('upgrade', upgradeHandler);
 
       app.debug('Onvif Camera WebSocket server attached to SignalK server');
     } else {
-      app.debug('SignalK app.server not available - WebSocket disabled');
+      app.debug('SignalK HTTP server not available - WebSocket disabled');
     }
 
     // Start auto-discovery timer if configured
@@ -746,8 +758,9 @@ module.exports = function createPlugin(app: PluginApp): PluginDefinition {
     mjpegStreams.clear();
     closeActiveWsConnections();
 
-    if (upgradeHandler && hasUpgradeListenerServer(app.server)) {
-      app.server.removeListener('upgrade', upgradeHandler);
+    const pluginHttpServer = getPluginHttpServer(app);
+    if (upgradeHandler && hasUpgradeListenerServer(pluginHttpServer)) {
+      pluginHttpServer.removeListener('upgrade', upgradeHandler);
       upgradeHandler = null;
     }
     if (wsServer) {

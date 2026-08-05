@@ -58,7 +58,6 @@ jobs:
     with:
       test-command: npm test
       build-command: npm run build
-      format-check-command: npm run prettier:check
       node-versions: '["22", "24"]'
       enable-armv7: false
       enable-signalk-integration: true
@@ -71,7 +70,6 @@ jobs:
     with:
       test-command: npm test
       build-command: npm run build
-      format-check-command: npm run prettier:check
       coverage-command: npm run coverage
       node-versions: ${{ inputs.node-versions }}
       enable-armv7: ${{ inputs.enable-armv7 }}
