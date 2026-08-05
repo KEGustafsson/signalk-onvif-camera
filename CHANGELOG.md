@@ -25,3 +25,4 @@
 - v1.2.0: fix per-camera credentials being ignored on address mismatch
 - v1.3.0: add PUT-handler-based PTZ API for external plugins/apps
 - v1.3.1: changelog added
+- v1.3.2: changelog included to tarball
